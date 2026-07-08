@@ -263,22 +263,49 @@ end
 -- MODULE 3: The Zombie Lord
 ----------------------------------------------------------------------------
 
---- Visual tell: Lords wear the vanilla HazardSuit outfit (full-body yellow
---- hazmat), reading as "irradiated alpha" at a glance. Dressing sequence
---- copied from the vanilla tutorial's scripted zombie (Steps.lua): disable
---- random outfit, dress, then queue a model rebuild. One-shot per zombie
---- via a ModData flag, and also invoked from the sweep's re-registration
---- path so Lords promoted before this feature existed (or reloaded from a
---- save) get their suit retroactively.
+-- The Lord's regalia: skull face, B42 bone armour over a black robe, combat
+-- boots - a skeletal warlord silhouette built entirely from vanilla items.
+-- (42.19 has no crown or cape item; the skeleton mask and BlackRobe are the
+-- closest vanilla equivalents.) Bump the version string whenever this list
+-- changes: already-dressed Lords compare against it and re-dress themselves.
+local LORD_ATTIRE_VERSION = "bone-king-1"
+local LORD_ATTIRE = {
+    "Base.Hat_HalloweenMaskSkeleton", -- skull face
+    "Base.BlackRobe",                 -- flowing black robe (cloak stand-in)
+    "Base.Cuirass_Bone",              -- B42 bone armour set
+    "Base.Gloves_BoneGloves",
+    "Base.GreaveBone_Left",
+    "Base.GreaveBone_Right",
+    "Base.ThighBone_L",
+    "Base.ThighBone_R",
+    "Base.Shoes_ArmyBoots",           -- combat boots
+}
+
+--- Visual tell for Lords. Dressing pattern verified against vanilla usage:
+--- the Trailer3 scenarios dress characters item-by-item with
+--- InventoryItemFactory.CreateItem + setWornItem(getBodyLocation(), item),
+--- and the tutorial's scripted zombie establishes the
+--- setDressInRandomOutfit/resetModelNextFrame bracketing. Invoked at
+--- promotion and from the sweep's re-registration path, so Lords from older
+--- saves (or an older attire version) get re-dressed retroactively.
 function Server.ensureLordOutfit(zombie)
     local md = zombie:getModData()
-    if md.NR_LordDressed then return end
-    md.NR_LordDressed = true
-    pcall(function()
-        zombie:setDressInRandomOutfit(false)
-        zombie:dressInNamedOutfit("HazardSuit")
-        zombie:resetModelNextFrame()
-    end)
+    if md.NR_LordDressed == LORD_ATTIRE_VERSION then return end
+    md.NR_LordDressed = LORD_ATTIRE_VERSION
+
+    pcall(function() zombie:setDressInRandomOutfit(false) end)
+    -- Strip whatever it died in (including a previous attire version) so
+    -- the regalia reads clean.
+    pcall(function() zombie:getWornItems():clear() end)
+    for _, itemId in ipairs(LORD_ATTIRE) do
+        pcall(function()
+            local item = InventoryItemFactory.CreateItem(itemId)
+            if item then
+                zombie:setWornItem(item:getBodyLocation(), item)
+            end
+        end)
+    end
+    pcall(function() zombie:resetModelNextFrame() end)
 end
 
 function Server.promoteToZombieLord(zombie)

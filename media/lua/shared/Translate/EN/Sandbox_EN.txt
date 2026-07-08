@@ -11,7 +11,7 @@ Sandbox_EN = {
     Sandbox_NocturnalReign_EnableNightMutation_tooltip = "Zombies become fast sprinters with heightened senses between Night Start Hour and Day Start Hour.",
 
     Sandbox_NocturnalReign_EnableZombieLord = "Enable Zombie Lord",
-    Sandbox_NocturnalReign_EnableZombieLord_tooltip = "Allows rare alpha zombies that command a local horde and are immune to daylight. Lords wear hazmat suits.",
+    Sandbox_NocturnalReign_EnableZombieLord_tooltip = "Allows rare alpha zombies that command a local horde and are immune to daylight. Lords wear skull masks and bone armour over black robes.",
 
     Sandbox_NocturnalReign_EnableLordFog = "Zombie Lords Call Fog",
     Sandbox_NocturnalReign_EnableLordFog_tooltip = "While a Zombie Lord is engaged with a player, thick fog rolls in and shields the horde from the sun - zombies fight at full nighttime ferocity until it lifts.",
