@@ -35,6 +35,7 @@ local DEFAULTS = {
     LordAlertRadius                  = 40,
     LordSeekRadius                  = 400,
     EnableLordGlow                  = true,
+    EnableLordDoorUse               = true,
     EnableHordeSummon                 = true,
     HordeSummonCooldownDays            = 1,
     HordeSummonMaxZombies               = 20,
@@ -76,6 +77,7 @@ function Options.getLordCommandRadius()             return readOption("LordComma
 function Options.getLordAlertRadius()                return readOption("LordAlertRadius") end
 function Options.getLordSeekRadius()                 return readOption("LordSeekRadius") end
 function Options.isLordGlowEnabled()                 return readOption("EnableLordGlow") end
+function Options.isLordDoorUseEnabled()              return readOption("EnableLordDoorUse") end
 
 function Options.isHordeSummonEnabled()             return readOption("EnableHordeSummon") end
 function Options.getHordeSummonCooldownDays()        return readOption("HordeSummonCooldownDays") end

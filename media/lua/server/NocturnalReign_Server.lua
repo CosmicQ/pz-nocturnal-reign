@@ -314,6 +314,36 @@ function Server.ensureLordOutfit(zombie)
     pcall(function() zombie:resetModelNextFrame() end)
 end
 
+--- The Lord's bearing: everything about *how* it moves, re-assertable.
+--- Applied at promotion and again every lordUpdate tick, because the
+--- engine's own stat passes (DoZombieStats and friends) can rewrite these
+--- per-zombie values from sandbox lore behind our back.
+---
+---   Gait: the Lord never hurries. A slow, deliberate shambler walk (`0`
+---   is the slowest index, same convention as Module 1) reads as
+---   confidence rather than weakness, and makes it instantly
+---   distinguishable at night when the rest of the horde is sprinting.
+---
+---   Cognition: `cognition` is a public IsoZombie field read directly by
+---   IsoDoor/IsoWindow/IsoThumpable (verified against the 42.19 jar) when
+---   deciding how a specific zombie interacts with them. `1` is the
+---   "Navigate + Use Doors" tier - the Lord turns the knob on unlocked
+---   doors and paths intelligently; locked/barricaded doors still stop it.
+---   `-1` means "defer to the sandbox lore setting", i.e. what every
+---   normal zombie carries - assigning it when the toggle is off means
+---   flipping the option mid-game genuinely reverts existing Lords.
+local function applyLordBearing(zombie)
+    trySetters(zombie, { "setSpeedType", "setZombieSpeedType" }, 0)
+    zombie:setRunning(false)
+
+    local cognition = Options.isLordDoorUseEnabled() and 1 or -1
+    -- Raw field write first (the documented modding route for per-zombie
+    -- lore stats); setter probe as the fallback, per the B42 API note.
+    if not pcall(function() zombie.cognition = cognition end) then
+        trySetters(zombie, { "setCognition" }, cognition)
+    end
+end
+
 function Server.promoteToZombieLord(zombie)
     local md = zombie:getModData()
     md[Keys.IS_LORD] = true
@@ -327,14 +357,7 @@ function Server.promoteToZombieLord(zombie)
     zombie:setHealth(zombie:getHealth() * Options.getLordHealthMultiplier())
 
     Server.ensureLordOutfit(zombie)
-
-    -- The Lord never hurries. A slow, deliberate shambler gait (`0` is the
-    -- slowest index, same convention as Module 1) reads as confidence
-    -- rather than weakness, and makes it instantly distinguishable at night
-    -- when the rest of the horde is sprinting. Re-asserted every lordUpdate
-    -- tick in case any engine-side pass resets the speed type.
-    trySetters(zombie, { "setSpeedType", "setZombieSpeedType" }, 0)
-    zombie:setRunning(false)
+    applyLordBearing(zombie)
 
     Server.lords[zombie] = true
     print(string.format(
@@ -569,11 +592,9 @@ local function lordUpdate(lordZombie)
         return
     end
 
-    -- Re-assert the slow regal gait once a second: cheap, and protects
-    -- against Modules 1/2-style engine passes (or vanilla lore updates)
-    -- resetting the speed type behind our back.
-    trySetters(lordZombie, { "setSpeedType", "setZombieSpeedType" }, 0)
-    lordZombie:setRunning(false)
+    -- Re-assert gait + cognition once a second; see applyLordBearing's
+    -- doc comment for why this can't be set-once.
+    applyLordBearing(lordZombie)
 
     local lx, ly, lz = lordZombie:getX(), lordZombie:getY(), lordZombie:getZ()
     local commandRadius = Options.getLordCommandRadius()

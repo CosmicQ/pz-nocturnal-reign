@@ -51,6 +51,9 @@ option NocturnalReign.LordSeekRadius
 option NocturnalReign.EnableLordGlow
 {type = boolean, default = true, page = NocturnalReign, translation = NocturnalReign_EnableLordGlow,}
 
+option NocturnalReign.EnableLordDoorUse
+{type = boolean, default = true, page = NocturnalReign, translation = NocturnalReign_EnableLordDoorUse,}
+
 option NocturnalReign.EnableHordeSummon
 {type = boolean, default = true, page = NocturnalReign, translation = NocturnalReign_EnableHordeSummon,}
 

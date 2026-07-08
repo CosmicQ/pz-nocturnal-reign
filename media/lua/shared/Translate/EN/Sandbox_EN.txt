@@ -52,6 +52,9 @@ Sandbox_EN = {
     Sandbox_NocturnalReign_EnableLordGlow = "Zombie Lord Red Glow",
     Sandbox_NocturnalReign_EnableLordGlow_tooltip = "Zombie Lords are tinted blood-red and cast an eerie red light around themselves, so they stand out from the horde at a glance.",
 
+    Sandbox_NocturnalReign_EnableLordDoorUse = "Zombie Lord Opens Doors",
+    Sandbox_NocturnalReign_EnableLordDoorUse_tooltip = "Zombie Lords navigate intelligently and open unlocked doors instead of battering them, regardless of the world's zombie Cognition lore. Locked and barricaded doors still stop them.",
+
     Sandbox_NocturnalReign_EnableHordeSummon = "Enable Raise the Dead",
     Sandbox_NocturnalReign_EnableHordeSummon_tooltip = "Allows a Zombie Lord to resurrect nearby corpses into fresh zombies once its cooldown is up.",
 
