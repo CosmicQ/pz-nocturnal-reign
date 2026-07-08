@@ -328,8 +328,13 @@ function Server.promoteToZombieLord(zombie)
 
     Server.ensureLordOutfit(zombie)
 
-    trySetters(zombie, { "setSpeedType", "setZombieSpeedType" }, 3)
-    zombie:setRunning(true)
+    -- The Lord never hurries. A slow, deliberate shambler gait (`0` is the
+    -- slowest index, same convention as Module 1) reads as confidence
+    -- rather than weakness, and makes it instantly distinguishable at night
+    -- when the rest of the horde is sprinting. Re-asserted every lordUpdate
+    -- tick in case any engine-side pass resets the speed type.
+    trySetters(zombie, { "setSpeedType", "setZombieSpeedType" }, 0)
+    zombie:setRunning(false)
 
     Server.lords[zombie] = true
     print(string.format(
@@ -493,6 +498,44 @@ local function summonHorde(lordZombie)
     end
 end
 
+----------------------------------------------------------------------------
+-- Player seeking: the Lord's long-range prey sense.
+----------------------------------------------------------------------------
+
+--- Returns a java list of every player the simulation knows about, or nil.
+--- getOnlinePlayers() is the MP-server accessor; on the embedded server of
+--- a single-player game it can exist but come back empty, so we fall back
+--- to IsoPlayer.getPlayers() - the local-players array, indexed by
+--- splitscreen slot, whose entries may be nil (callers must guard).
+local function getAllPlayers()
+    local ok, players = pcall(getOnlinePlayers)
+    if ok and players and players:size() > 0 then return players end
+    local ok2, locals = pcall(function() return IsoPlayer.getPlayers() end)
+    if ok2 then return locals end
+    return nil
+end
+
+--- Closest living player to (lx, ly) within `maxRadius` tiles, or nil.
+--- Distance is 2D on purpose: a player three floors up is still prey.
+local function findClosestPlayer(lx, ly, maxRadius)
+    if maxRadius <= 0 then return nil end
+    local players = getAllPlayers()
+    if not players then return nil end
+
+    local best, bestDistSq = nil, maxRadius * maxRadius
+    for i = 0, players:size() - 1 do
+        local p = players:get(i)
+        if p and not p:isDead() then
+            local dx, dy = p:getX() - lx, p:getY() - ly
+            local distSq = dx * dx + dy * dy
+            if distSq <= bestDistSq then
+                best, bestDistSq = p, distSq
+            end
+        end
+    end
+    return best
+end
+
 --- Per-Lord AI tick. Design rationale (see also the module doc comment
 --- above the AI loop registration below):
 --
@@ -526,6 +569,12 @@ local function lordUpdate(lordZombie)
         return
     end
 
+    -- Re-assert the slow regal gait once a second: cheap, and protects
+    -- against Modules 1/2-style engine passes (or vanilla lore updates)
+    -- resetting the speed type behind our back.
+    trySetters(lordZombie, { "setSpeedType", "setZombieSpeedType" }, 0)
+    lordZombie:setRunning(false)
+
     local lx, ly, lz = lordZombie:getX(), lordZombie:getY(), lordZombie:getZ()
     local commandRadius = Options.getLordCommandRadius()
 
@@ -558,7 +607,24 @@ local function lordUpdate(lordZombie)
             end
         end
     else
+        -- No target in sight: the Lord stalks. addSound at its own feet is
+        -- the silent rallying call (WorldSounds carry no audio unless the
+        -- caller also plays one - players hear nothing), drawing every
+        -- zombie in earshot to walk with it exactly as they would to a car
+        -- horn. Because it re-fires every tick from the Lord's current
+        -- position, the gathered pack flows along behind it as it moves.
         addSound(lordZombie, lx, ly, lz, commandRadius, 40)
+
+        -- Long-range prey sense: walk slowly toward the closest living
+        -- player within LordSeekRadius (default 400 tiles - roughly max
+        -- sniper-rifle range). This is deliberate omniscience, not a
+        -- sight/sound check: the Lord always knows roughly where prey is
+        -- and drifts that way, horde in tow, until the engine's normal
+        -- senses acquire a real target and the branch above takes over.
+        local prey = findClosestPlayer(lx, ly, Options.getLordSeekRadius())
+        if prey then
+            pcall(function() lordZombie:pathToLocationF(prey:getX(), prey:getY(), prey:getZ()) end)
+        end
     end
 
     local cell = lordZombie:getCell()

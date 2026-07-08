@@ -33,6 +33,8 @@ local DEFAULTS = {
     SprinterSpeedMultiplier         = 2.0,
     LordCommandRadius               = 25,
     LordAlertRadius                  = 40,
+    LordSeekRadius                  = 400,
+    EnableLordGlow                  = true,
     EnableHordeSummon                 = true,
     HordeSummonCooldownDays            = 1,
     HordeSummonMaxZombies               = 20,
@@ -72,6 +74,8 @@ function Options.getZombieLordSpawnChancePercent() return readOption("ZombieLord
 function Options.getSprinterSpeedMultiplier()      return readOption("SprinterSpeedMultiplier") end
 function Options.getLordCommandRadius()             return readOption("LordCommandRadius") end
 function Options.getLordAlertRadius()                return readOption("LordAlertRadius") end
+function Options.getLordSeekRadius()                 return readOption("LordSeekRadius") end
+function Options.isLordGlowEnabled()                 return readOption("EnableLordGlow") end
 
 function Options.isHordeSummonEnabled()             return readOption("EnableHordeSummon") end
 function Options.getHordeSummonCooldownDays()        return readOption("HordeSummonCooldownDays") end

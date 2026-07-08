@@ -46,6 +46,12 @@ Sandbox_EN = {
     Sandbox_NocturnalReign_LordAlertRadius = "Zombie Lord Alert Radius (tiles)",
     Sandbox_NocturnalReign_LordAlertRadius_tooltip = "Radius over which a Zombie Lord broadcasts a spotted player's location to the horde.",
 
+    Sandbox_NocturnalReign_LordSeekRadius = "Zombie Lord Seek Radius (tiles)",
+    Sandbox_NocturnalReign_LordSeekRadius_tooltip = "Range at which a Zombie Lord senses the closest living player and stalks slowly toward them, silently calling zombies to its side as it walks. 0 disables seeking.",
+
+    Sandbox_NocturnalReign_EnableLordGlow = "Zombie Lord Red Glow",
+    Sandbox_NocturnalReign_EnableLordGlow_tooltip = "Zombie Lords are tinted blood-red and cast an eerie red light around themselves, so they stand out from the horde at a glance.",
+
     Sandbox_NocturnalReign_EnableHordeSummon = "Enable Raise the Dead",
     Sandbox_NocturnalReign_EnableHordeSummon_tooltip = "Allows a Zombie Lord to resurrect nearby corpses into fresh zombies once its cooldown is up.",
 

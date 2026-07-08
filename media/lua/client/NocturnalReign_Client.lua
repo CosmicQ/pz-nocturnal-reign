@@ -25,11 +25,12 @@ local lastPeriod = nil
 local scanCounter = 0
 local lordWarningCooldownTicks = 0
 
--- Purely a UI polling cadence, not a gameplay one: ~60 OnPlayerUpdate calls
--- is roughly 2 seconds at 30fps. Cheap enough to run unconditionally since
--- it only ever looks at the local player and their already-loaded cell.
-local SCAN_EVERY_TICKS = 60
-local LORD_WARNING_COOLDOWN_TICKS = SCAN_EVERY_TICKS * 5
+-- Purely a UI polling cadence, not a gameplay one: ~30 OnPlayerUpdate calls
+-- is roughly 1 second at 30fps - tight enough that the Lord's follow-light
+-- (below) keeps pace with its slow walk. Cheap enough to run unconditionally
+-- since it only ever looks at the local player and their already-loaded cell.
+local SCAN_EVERY_TICKS = 30
+local LORD_WARNING_COOLDOWN_SCANS = 30 -- ~30s between repeat warnings
 
 local function announce(player, text)
     -- HaloTextHelper floats a short-lived label over the character - a
@@ -64,31 +65,113 @@ local function checkDayNightTransition(player)
     end
 end
 
-local function scanForNearbyLord(player)
-    if not Options.isZombieLordEnabled() then return end
+----------------------------------------------------------------------------
+-- Lord glow: the unmistakable "that is NOT a normal zombie" cue.
+--
+-- Two layers, both purely cosmetic and client-side (the server never sees
+-- either):
+--
+--   1. A blood-red engine highlight tint over the Lord's whole sprite -
+--      setHighlighted/setHighlightColor, the same IsoObject mechanism the
+--      debug tools use to mark objects. Reapplied every scan so it survives
+--      any engine-side highlight reset.
+--
+--   2. An IsoLightSource pinned to the Lord's tile - an eerie red glow cast
+--      on the ground around it, readable from well outside melee range and
+--      striking at night. Light sources are static engine objects with no
+--      move API, so the scan removes and recreates the lamp whenever the
+--      Lord crosses onto a new tile (the standard follow-light pattern).
+----------------------------------------------------------------------------
 
+local LORD_GLOW_R, LORD_GLOW_G, LORD_GLOW_B = 0.9, 0.08, 0.08
+local LORD_GLOW_RADIUS = 6 -- tiles of red light around the Lord
+
+-- [zombie] = { light = IsoLightSource, x, y, z } for every currently-glowing
+-- Lord. Strong keys on purpose: entries are removed explicitly by the scan's
+-- cleanup pass, which must run removeLamppost before the reference drops -
+-- a weak table would let the zombie (and our handle to its lamp) vanish
+-- first, stranding an orphaned red light in the world.
+local lordLights = {}
+
+local function removeLordLight(zombie)
+    local entry = lordLights[zombie]
+    if not entry then return end
+    lordLights[zombie] = nil
+    pcall(function() getCell():removeLamppost(entry.light) end)
+end
+
+--- Both cosmetic setters probed in two signature forms, same philosophy as
+--- the server's trySetters: B42 unstable has shuffled overloads before, and
+--- a silently-skipped tint beats a hard error in a render-path callback.
+local function applyLordHighlight(zombie)
+    if not pcall(function() zombie:setHighlightColor(1.0, 0.15, 0.15, 0.7) end) then
+        pcall(function() zombie:setHighlightColor(ColorInfo.new(1.0, 0.15, 0.15, 0.7)) end)
+    end
+    if not pcall(function() zombie:setHighlighted(true) end) then
+        pcall(function() zombie:setHighlighted(true, false) end)
+    end
+end
+
+local function updateLordLight(zombie)
+    local x = math.floor(zombie:getX())
+    local y = math.floor(zombie:getY())
+    local z = math.floor(zombie:getZ())
+
+    local entry = lordLights[zombie]
+    if entry and entry.x == x and entry.y == y and entry.z == z then return end
+    removeLordLight(zombie)
+
+    pcall(function()
+        local light = IsoLightSource.new(x, y, z, LORD_GLOW_R, LORD_GLOW_G, LORD_GLOW_B, LORD_GLOW_RADIUS)
+        getCell():addLamppost(light)
+        lordLights[zombie] = { light = light, x = x, y = y, z = z }
+    end)
+end
+
+--- One pass over the loaded cell's zombies: apply the glow to every Lord,
+--- warn (with cooldown) when one is close, and clean up lights whose Lord
+--- died, despawned, or walked out of the loaded area since the last scan.
+local function scanForLords(player)
     if lordWarningCooldownTicks > 0 then
         lordWarningCooldownTicks = lordWarningCooldownTicks - 1
-        return
     end
 
+    local lordsEnabled = Options.isZombieLordEnabled()
+    local glowEnabled = lordsEnabled and Options.isLordGlowEnabled()
+
+    local seen = {}
     local cell = player:getCell()
-    if not cell then return end
-    local list = cell:getZombieList()
-    if not list then return end
+    local list = cell and cell:getZombieList()
+    if list and lordsEnabled then
+        local px, py = player:getX(), player:getY()
+        local warnRadiusSq = 30 * 30
 
-    local px, py = player:getX(), player:getY()
-    local warnRadiusSq = 30 * 30
-
-    for i = 0, list:size() - 1 do
-        local zombie = list:get(i)
-        if zombie and not zombie:isDead() and zombie:getModData()[Keys.IS_LORD] then
-            local dx, dy = zombie:getX() - px, zombie:getY() - py
-            if (dx * dx + dy * dy) <= warnRadiusSq then
-                announce(player, "Something huge is commanding the dead nearby...")
-                lordWarningCooldownTicks = LORD_WARNING_COOLDOWN_TICKS
-                break
+        for i = 0, list:size() - 1 do
+            local zombie = list:get(i)
+            if zombie and not zombie:isDead() and zombie:getModData()[Keys.IS_LORD] then
+                if glowEnabled then
+                    seen[zombie] = true
+                    applyLordHighlight(zombie)
+                    updateLordLight(zombie)
+                end
+                if lordWarningCooldownTicks <= 0 then
+                    local dx, dy = zombie:getX() - px, zombie:getY() - py
+                    if (dx * dx + dy * dy) <= warnRadiusSq then
+                        announce(player, "Something huge is commanding the dead nearby...")
+                        lordWarningCooldownTicks = LORD_WARNING_COOLDOWN_SCANS
+                    end
+                end
             end
+        end
+    end
+
+    -- Cleanup: any tracked light whose Lord we did not just see (dead,
+    -- despawned, out of the loaded area, or glow toggled off mid-game).
+    -- Clearing a key mid-pairs is legal Lua; only *adding* keys is not.
+    for zombie in pairs(lordLights) do
+        if not seen[zombie] then
+            pcall(function() zombie:setHighlighted(false) end)
+            removeLordLight(zombie)
         end
     end
 end
@@ -101,7 +184,7 @@ local function onPlayerUpdate(player)
     scanCounter = 0
 
     checkDayNightTransition(player)
-    scanForNearbyLord(player)
+    scanForLords(player)
 end
 
 Events.OnPlayerUpdate.Add(onPlayerUpdate)

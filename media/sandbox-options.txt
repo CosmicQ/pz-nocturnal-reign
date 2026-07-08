@@ -45,6 +45,12 @@ option NocturnalReign.LordCommandRadius
 option NocturnalReign.LordAlertRadius
 {type = integer, min = 10, max = 100, default = 40, page = NocturnalReign, translation = NocturnalReign_LordAlertRadius,}
 
+option NocturnalReign.LordSeekRadius
+{type = integer, min = 0, max = 2000, default = 400, page = NocturnalReign, translation = NocturnalReign_LordSeekRadius,}
+
+option NocturnalReign.EnableLordGlow
+{type = boolean, default = true, page = NocturnalReign, translation = NocturnalReign_EnableLordGlow,}
+
 option NocturnalReign.EnableHordeSummon
 {type = boolean, default = true, page = NocturnalReign, translation = NocturnalReign_EnableHordeSummon,}
 
