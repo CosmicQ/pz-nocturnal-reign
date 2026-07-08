@@ -1,0 +1,63 @@
+Sandbox_EN = {
+    Sandbox_NocturnalReign = "Nocturnal Reign",
+
+    Sandbox_NocturnalReign_EnablePhotophobia = "Enable Daytime Photophobia",
+    Sandbox_NocturnalReign_EnablePhotophobia_tooltip = "Zombies caught in direct outdoor sunlight slow to a crawl and retreat toward the nearest indoor or covered spot.",
+
+    Sandbox_NocturnalReign_EnableSunburnDamage = "Sunlight Damages Zombies",
+    Sandbox_NocturnalReign_EnableSunburnDamage_tooltip = "If enabled, zombies in direct sunlight also slowly lose health. Off by default.",
+
+    Sandbox_NocturnalReign_EnableNightMutation = "Enable Nightfall Mutation",
+    Sandbox_NocturnalReign_EnableNightMutation_tooltip = "Zombies become fast sprinters with heightened senses between Night Start Hour and Day Start Hour.",
+
+    Sandbox_NocturnalReign_EnableZombieLord = "Enable Zombie Lord",
+    Sandbox_NocturnalReign_EnableZombieLord_tooltip = "Allows rare alpha zombies that command a local horde and are immune to daylight. Lords wear hazmat suits.",
+
+    Sandbox_NocturnalReign_EnableLordFog = "Zombie Lords Call Fog",
+    Sandbox_NocturnalReign_EnableLordFog_tooltip = "While a Zombie Lord is engaged with a player, thick fog rolls in and shields the horde from the sun - zombies fight at full nighttime ferocity until it lifts.",
+
+    Sandbox_NocturnalReign_EnableLordLoot = "Zombie Lord Trophies",
+    Sandbox_NocturnalReign_EnableLordLoot_tooltip = "A slain Zombie Lord's corpse carries rare high-value loot.",
+
+    Sandbox_NocturnalReign_LordHealthMultiplier = "Zombie Lord Health Multiplier",
+    Sandbox_NocturnalReign_LordHealthMultiplier_tooltip = "How many times tougher than a normal zombie a Zombie Lord is. Does not prevent instant-kill critical moves.",
+
+    Sandbox_NocturnalReign_DayStartHour = "Day Start Hour",
+    Sandbox_NocturnalReign_DayStartHour_tooltip = "Hour (0-23) at which the photophobia window begins.",
+
+    Sandbox_NocturnalReign_NightStartHour = "Night Start Hour",
+    Sandbox_NocturnalReign_NightStartHour_tooltip = "Hour (0-23) at which the nightfall mutation window begins.",
+
+    Sandbox_NocturnalReign_BurnTickSeconds = "Sunburn Tick Rate (seconds)",
+    Sandbox_NocturnalReign_BurnTickSeconds_tooltip = "In-game seconds between each sunburn damage application to an exposed zombie.",
+
+    Sandbox_NocturnalReign_BurnDamagePercentPerTick = "Sunburn Damage (% health per tick)",
+    Sandbox_NocturnalReign_BurnDamagePercentPerTick_tooltip = "Percentage of max health removed from an exposed zombie on every sunburn tick.",
+
+    Sandbox_NocturnalReign_ZombieLordSpawnChancePercent = "Zombie Lord Chance (%)",
+    Sandbox_NocturnalReign_ZombieLordSpawnChancePercent_tooltip = "Chance, per zombie the first time it is simulated, that it rises as a Zombie Lord.",
+
+    Sandbox_NocturnalReign_SprinterSpeedMultiplier = "Sprinter Speed Multiplier",
+    Sandbox_NocturnalReign_SprinterSpeedMultiplier_tooltip = "Relative speed of nighttime sprinters, used where the build's zombie API allows a direct multiplier.",
+
+    Sandbox_NocturnalReign_LordCommandRadius = "Zombie Lord Command Radius (tiles)",
+    Sandbox_NocturnalReign_LordCommandRadius_tooltip = "Radius in which a Zombie Lord gathers and commands nearby standard zombies.",
+
+    Sandbox_NocturnalReign_LordAlertRadius = "Zombie Lord Alert Radius (tiles)",
+    Sandbox_NocturnalReign_LordAlertRadius_tooltip = "Radius over which a Zombie Lord broadcasts a spotted player's location to the horde.",
+
+    Sandbox_NocturnalReign_EnableHordeSummon = "Enable Raise the Dead",
+    Sandbox_NocturnalReign_EnableHordeSummon_tooltip = "Allows a Zombie Lord to resurrect nearby corpses into fresh zombies once its cooldown is up.",
+
+    Sandbox_NocturnalReign_HordeSummonCooldownDays = "Raise the Dead Cooldown (days)",
+    Sandbox_NocturnalReign_HordeSummonCooldownDays_tooltip = "In-game days a Zombie Lord must wait between uses of Raise the Dead.",
+
+    Sandbox_NocturnalReign_HordeSummonMaxZombies = "Raise the Dead Max Zombies",
+    Sandbox_NocturnalReign_HordeSummonMaxZombies_tooltip = "Maximum number of corpses a single use of Raise the Dead will resurrect.",
+
+    Sandbox_NocturnalReign_HordeSummonHealthPercent = "Raised Zombie Health (%)",
+    Sandbox_NocturnalReign_HordeSummonHealthPercent_tooltip = "Health percentage of zombies resurrected by Raise the Dead.",
+
+    Sandbox_NocturnalReign_HordeSummonRadius = "Raise the Dead Radius (tiles)",
+    Sandbox_NocturnalReign_HordeSummonRadius_tooltip = "Radius around a Zombie Lord searched for corpses to resurrect.",
+}
