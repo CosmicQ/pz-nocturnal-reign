@@ -16,7 +16,7 @@ There is no build step — the repository *is* the mod, laid out in Build 42's v
 
 1. Symlink the mod folder into your mods directory:
    ```sh
-   ln -s /path/to/pz-zombie-lord/Contents/mods/NocturnalReign ~/Zomboid/mods/NocturnalReign
+   ln -s /path/to/pz-nocturnal-reign/Contents/mods/NocturnalReign ~/Zomboid/mods/NocturnalReign
    ```
 2. Enable the mod in-game and load a save.
 3. Edit Lua, then reload the save to pick up changes.
@@ -48,7 +48,7 @@ Repo-root files (`workshop.txt`, `preview.png`, and everything outside `Contents
 The repo root is already shaped as a Workshop staging folder. Symlink it into the game's Workshop directory and use the in-game uploader:
 
 ```sh
-ln -s /path/to/pz-zombie-lord ~/Zomboid/Workshop/NocturnalReign
+ln -s /path/to/pz-nocturnal-reign ~/Zomboid/Workshop/NocturnalReign
 ```
 
 Then **Main menu → Workshop → Create/Update item**. After the first upload the game writes the assigned Workshop `id=` into `workshop.txt` — commit that change so future updates target the same item.

@@ -87,7 +87,7 @@ Every timing, damage, chance, and radius value above is exposed in [Sandbox Opti
 
 1. Download or clone this repository:
    ```sh
-   git clone https://github.com/CosmicQ/pz-zombie-lord.git
+   git clone https://github.com/CosmicQ/pz-nocturnal-reign.git
    ```
 2. Copy (or symlink) `Contents/mods/NocturnalReign` into your Zomboid mods directory:
 
@@ -98,7 +98,7 @@ Every timing, damage, chance, and radius value above is exposed in [Sandbox Opti
    | macOS | `~/Zomboid/mods/` |
 
    ```sh
-   ln -s /path/to/pz-zombie-lord/Contents/mods/NocturnalReign ~/Zomboid/mods/NocturnalReign
+   ln -s /path/to/pz-nocturnal-reign/Contents/mods/NocturnalReign ~/Zomboid/mods/NocturnalReign
    ```
 3. Enable **Nocturnal Reign** in the in-game **Mods** menu.
 4. Start a new game, or add it to an existing save — both work. Tune everything under **Sandbox Options → Nocturnal Reign**.

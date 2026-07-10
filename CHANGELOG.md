@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Feign death** — once per life, a chosen that drops to half health or is knocked off its feet collapses among the dead: its glow goes dark, it lies still as any corpse, and it lunges when someone comes close enough to loot it. Uses the engine's native fake-dead ambush state.
 
 - **Tier-scaled boss loot** — a slain Lord's corpse now pays 1 + zone tier distinct loot bundles (wilderness Lords: 2), from an expanded table: katana, assault rifle/shotgun/hunting rifle with ammo, sledgehammer, machete + hunting knife, gold bar + gold necklace, and an army ALICE pack stocked with medical supplies.
+- Steam Workshop packaging: `workshop.txt` rewritten for the boss-progression feature set, unlisted visibility during family playtesting, Build 42/Multiplayer/WIP tags.
+
+### Changed
+
+- Repository renamed from `pz-zombie-lord` to `pz-nocturnal-reign` to match the mod; all documentation and `mod.info` links updated.
 
 ### Fixed
 
@@ -50,4 +55,4 @@ First public release, developed and tested against Project Zomboid Build 42.19.
 - **23 sandbox options** covering every timing, damage, chance, and radius value, with English labels and tooltips.
 - Client-side flavour: day/night transition banners and a proximity warning when a Lord is commanding the dead nearby.
 
-[1.0.0]: https://github.com/CosmicQ/pz-zombie-lord/releases/tag/v1.0.0
+[1.0.0]: https://github.com/CosmicQ/pz-nocturnal-reign/releases/tag/v1.0.0
