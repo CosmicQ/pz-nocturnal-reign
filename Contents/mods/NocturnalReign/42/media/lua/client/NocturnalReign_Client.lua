@@ -219,6 +219,46 @@ local function scanForLords(player)
     end
 end
 
+----------------------------------------------------------------------------
+-- Lord fog, multiplayer leg.
+--
+-- On a dedicated server the ClimateManager fog override the server sets
+-- only affects the server's own simulation - each client runs its own
+-- ClimateManager and must apply the identical override locally. The server
+-- broadcasts a "fog" command whenever its override toggles; this handler is
+-- the receiving end. Single-player never fires OnServerCommand, and there
+-- the server module's local set already lands on the one shared
+-- ClimateManager, so this stays MP-only by construction.
+--
+-- The two constants mirror MODULE 3c in NocturnalReign_Server.lua - keep
+-- them in sync by hand (the server file never loads on the client, so they
+-- cannot be shared without moving them to the shared options module).
+----------------------------------------------------------------------------
+
+local FOG_CLIMATE_ID = 5   -- ClimateManager float id: fog intensity
+local FOG_INTENSITY = 0.85 -- 0..1; heavy but not a total whiteout
+
+local function onServerCommand(module, command, args)
+    if module ~= "NocturnalReign" or command ~= "fog" then return end
+    local on = args and args.on == true
+    local ok = pcall(function()
+        local fogFloat = getClimateManager():getClimateFloat(FOG_CLIMATE_ID)
+        if on then
+            fogFloat:setEnableOverride(true)
+            fogFloat:setOverride(FOG_INTENSITY, 1)
+        else
+            fogFloat:setEnableOverride(false)
+        end
+    end)
+    -- Receipt on purpose: Kahlua swallows pure-Lua pcall failures silently,
+    -- and "the fog didn't show" is otherwise indistinguishable from "the
+    -- command never arrived".
+    print(string.format("[NocturnalReign] fog %s (server command, applied=%s)",
+        on and "rolls in" or "lifts", tostring(ok)))
+end
+
+Events.OnServerCommand.Add(onServerCommand)
+
 local function onPlayerUpdate(player)
     if player ~= getPlayer() then return end -- ignore any non-local-player callback quirks
 

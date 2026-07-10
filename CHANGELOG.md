@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Constant console exception spam (and the in-game error icon) while a Lord was active: the per-tick attempt to write `IsoZombie.cognition` always throws on 42.19 — Kahlua rejects raw field writes and the build has no `setCognition` method. The write is now a silent one-time capability probe; Lord door-use is dormant until the game exposes a per-zombie cognition API, and the console says so once per session.
 - The Lord's regalia now actually renders: B42 zombies draw their model from a named outfit, not from worn inventory items, so the Lord dresses in the game's bone-armour outfit (`ArmorTest_Bone`, top hat included) with hooded `Cultist` robes as the female-model fallback. The skull-and-bone worn items remain in inventory as lootable trophies.
 - Duplicate territorial Lords: a Lord whose chunk unloaded was replaced instantly (QA saw six Lords of Rosewood at once); a lost Lord now gets a 12-in-game-hour grace window to resurface before a replacement rises.
+- The Lord's fog now reaches multiplayer clients: the server's ClimateManager override only affects its own simulation, so players on a dedicated server fought under clear skies. The server now broadcasts the fog toggle as a server command and each client applies the identical override locally (single-player unaffected).
+- Random wilderness Lord promotions are capped at one per population sweep: when a dense horde's cell loaded, every zombie in it rolled in the same minute, and multiplayer QA saw eleven Lords rise in a single frame from one packed basement horde.
 
 ## [1.0.0] - 2026-07-09
 

@@ -619,6 +619,17 @@ function Server.promoteToMiniBoss(zombie, zone, miniType)
 end
 
 --- Called once, the first time we ever see a given zombie, to roll for
+-- At most one random promotion per sweep, reset by mainSweep. When a dense
+-- horde's cell loads, every zombie in it rolls in the same minute - MP QA
+-- saw ELEVEN Lords rise in a single frame from one packed basement horde.
+-- The losers keep their INITIALIZED flag, so a capped horde yields its one
+-- alpha and never re-rolls the rest.
+local randomLordBudget = 0
+
+local function resetRandomLordBudget()
+    randomLordBudget = 1
+end
+
 --- promotion. Gated behind a ModData flag so re-running the sweep never
 --- re-rolls the same zombie.
 local function initZombieIfNeeded(zombie)
@@ -639,7 +650,8 @@ local function initZombieIfNeeded(zombie)
     -- logic. Chance is a percent with up to 2 decimal places of precision,
     -- e.g. 0.5% -> 50 out of 10000.
     local chance = Options.getZombieLordSpawnChancePercent()
-    if chance > 0 and ZombRand(10000) < math.floor(chance * 100) then
+    if chance > 0 and ZombRand(10000) < math.floor(chance * 100) and randomLordBudget > 0 then
+        randomLordBudget = randomLordBudget - 1
         Server.promoteToZombieLord(zombie)
     end
 end
@@ -1042,6 +1054,18 @@ local function setFogOverride(enabled)
             fogFloat:setEnableOverride(false)
         end
     end)
+    -- On a dedicated server the override above only touches the SERVER's
+    -- climate simulation; clients run their own ClimateManager and never
+    -- see it (MP QA: the "calls the fog" receipt printed while the player
+    -- fought under clear skies). Mirror every toggle to the clients, where
+    -- NocturnalReign_Client applies the identical override locally.
+    -- isServer() is false in single-player, where the local set above is
+    -- already the whole job.
+    if isServer() then
+        pcall(function()
+            sendServerCommand("NocturnalReign", "fog", { on = enabled and true or false })
+        end)
+    end
 end
 
 local function updateLordFog(anyLordInCombat)
@@ -1437,6 +1461,8 @@ local function mainSweep()
         for zoneName, lord in pairs(Server.zoneLords) do beacon("Lord of " .. zoneName, lord) end
         for label, mini in pairs(Server.zoneMinis) do beacon(label, mini) end
     end
+
+    resetRandomLordBudget()
 
     local hour = getGameTime():getHour()
     local daytime = Options.isDaytimeHour(hour)
