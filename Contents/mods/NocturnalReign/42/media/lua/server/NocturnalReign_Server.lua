@@ -1047,6 +1047,33 @@ local FOG_CLIMATE_ID = 5      -- ClimateManager float id: fog intensity
 local FOG_INTENSITY = 0.85    -- 0..1; heavy but not a total whiteout
 local FOG_LINGER_TICKS = 30   -- lord-ticks (~30s) fog lingers after combat ends
 
+-- The Lord's fog is BLOOD RED - same signature hue as its glow. Applied
+-- through the COLOR_NEW_FOG climate color (B42's volumetric fog tint, the
+-- same channel the engine's own storm/tropical fog tints ride on), via the
+-- admin value layer - the exact write path the vanilla climate debug panel
+-- uses (setEnableAdmin/setAdminValue, 8 floats: exterior then interior
+-- RGBA). Exterior runs deep red; interior stays a faint blush so indoor
+-- rooms don't turn into a darkroom.
+local FOG_TINT = {
+    exR = 0.55, exG = 0.06, exB = 0.06, exA = 0.85,
+    inR = 0.30, inG = 0.08, inB = 0.08, inA = 0.35,
+}
+
+--- The COLOR_NEW_FOG ClimateColor, by constant when this build exposes it,
+--- by name scan otherwise; nil if the channel doesn't exist (the intensity
+--- override still works - the fog is simply grey).
+local function getFogClimateColor()
+    local clim = getClimateManager()
+    if ClimateManager and ClimateManager.COLOR_NEW_FOG ~= nil then
+        return clim:getClimateColor(ClimateManager.COLOR_NEW_FOG)
+    end
+    for i = 0, clim:getColorMax() - 1 do
+        local color = clim:getClimateColor(i)
+        if color and color:getName() == "COLOR_NEW_FOG" then return color end
+    end
+    return nil
+end
+
 local fogActive = false
 local fogLinger = 0
 
@@ -1060,6 +1087,19 @@ local function setFogOverride(enabled)
             -- Releasing the override hands fog control back to the weather
             -- simulation, which eases back to whatever is natural right now.
             fogFloat:setEnableOverride(false)
+        end
+    end)
+    -- Tint in its own pcall: a build without the color channel must not
+    -- take the intensity override down with it.
+    pcall(function()
+        local tint = getFogClimateColor()
+        if not tint then return end
+        if enabled then
+            tint:setEnableAdmin(true)
+            tint:setAdminValue(FOG_TINT.exR, FOG_TINT.exG, FOG_TINT.exB, FOG_TINT.exA,
+                               FOG_TINT.inR, FOG_TINT.inG, FOG_TINT.inB, FOG_TINT.inA)
+        else
+            tint:setEnableAdmin(false)
         end
     end)
     -- On a dedicated server the override above only touches the SERVER's

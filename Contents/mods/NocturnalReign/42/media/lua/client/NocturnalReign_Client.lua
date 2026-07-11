@@ -285,8 +285,28 @@ end
 local FOG_CLIMATE_ID = 5   -- ClimateManager float id: fog intensity
 local FOG_INTENSITY = 0.85 -- 0..1; heavy but not a total whiteout
 
+-- Blood-red tint, mirroring MODULE 3c's FOG_TINT in the server file (keep
+-- in sync by hand, same as the two constants above): COLOR_NEW_FOG via the
+-- admin value layer, 8 floats = exterior then interior RGBA.
+local FOG_TINT = {
+    exR = 0.55, exG = 0.06, exB = 0.06, exA = 0.85,
+    inR = 0.30, inG = 0.08, inB = 0.08, inA = 0.35,
+}
+
+local function getFogClimateColor()
+    local clim = getClimateManager()
+    if ClimateManager and ClimateManager.COLOR_NEW_FOG ~= nil then
+        return clim:getClimateColor(ClimateManager.COLOR_NEW_FOG)
+    end
+    for i = 0, clim:getColorMax() - 1 do
+        local color = clim:getClimateColor(i)
+        if color and color:getName() == "COLOR_NEW_FOG" then return color end
+    end
+    return nil
+end
+
 local function applyFogOverride(on)
-    return pcall(function()
+    local ok = pcall(function()
         local fogFloat = getClimateManager():getClimateFloat(FOG_CLIMATE_ID)
         if on then
             fogFloat:setEnableOverride(true)
@@ -295,6 +315,22 @@ local function applyFogOverride(on)
             fogFloat:setEnableOverride(false)
         end
     end)
+    -- Tint in its own pcall so a build without the color channel can't
+    -- take the intensity override down with it. Re-asserted alongside the
+    -- intensity on every state packet, for the same climate-sync-stomp
+    -- reason.
+    pcall(function()
+        local tint = getFogClimateColor()
+        if not tint then return end
+        if on then
+            tint:setEnableAdmin(true)
+            tint:setAdminValue(FOG_TINT.exR, FOG_TINT.exG, FOG_TINT.exB, FOG_TINT.exA,
+                               FOG_TINT.inR, FOG_TINT.inG, FOG_TINT.inB, FOG_TINT.inA)
+        else
+            tint:setEnableAdmin(false)
+        end
+    end)
+    return ok
 end
 
 --- The summoning shriek, remote-client leg (see bossShriek in

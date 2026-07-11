@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The Lord's fog runs blood red** — the called fog is now tinted the Lord's signature deep red through B42's `COLOR_NEW_FOG` climate color (the same channel the engine's own storm/tropical fog tints use), exterior deep red with a faint interior blush. Applied and released together with the fog intensity on both the server and every multiplayer client; natural weather fog stays grey.
 - **Admin campaign reset** — a "Nocturnal Reign (Admin)" world right-click menu (admins/moderators in multiplayer, always available in single-player) that puts the current town — or every town — back under its Lord's reign: slain-day records for the Lord and its chosen are erased and the full court rises again on the next approach. The server re-validates the sender's access level; the client-side menu gate is UI only.
 
 ### Fixed
