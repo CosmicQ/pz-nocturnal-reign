@@ -51,7 +51,7 @@ A rare alpha predator (default: 0.5% of zombies) that plays by its own rules:
 - **A coordinator.** The moment it spots you, it broadcasts your position to every zombie in a wide radius — the whole pack converges at once.
 - **It calls the fog.** While a Lord is engaged, thick fog rolls in and shields its horde from the sun; the pack fights at full nighttime ferocity until it lifts.
 - **It opens doors.** Unlocked doors don't stop it — it turns the knob and walks in. Locked and barricaded doors still hold. *(Dormant on builds without a per-zombie cognition API, including 42.19 — re-activates automatically when the game exposes one.)*
-- **It raises the dead.** Once per day (configurable), an engaged Lord resurrects nearby corpses back into the fight at reduced health.
+- **It raises the dead.** Once per day (configurable), an engaged Lord lets out a blood-curdling shriek and a horde claws its way up out of the earth around it — rising from among the dead at reduced health, hidden by the fog the Lord has already called. The horde scales with the Lord: base size × the town's tier, so Louisville's Lord answers with four times what Rosewood's can call.
 - **A boss fight, not a speed bump.** 10× health by default (instant-kill criticals still work), and its corpse carries rare high-value loot — plus its full regalia as lootable trophies.
 
 ### 🏰 Territorial Lords & Liberation
@@ -72,7 +72,7 @@ Towns of tier 2 and above are also guarded by the Lord's court — one fewer cho
 |---|---|---|
 | **The Shepherd** | Priest's cassock | Gathers and commands the escort pack |
 | **The Herald** | Cultist's hood | Broadcasts your position to the horde |
-| **The Gravedigger** | Scarecrow's rags | Raises corpses back into the fight |
+| **The Gravedigger** | Scarecrow's rags | Shrieks the dead up out of the earth (at base strength — the apprentice, never the equal) |
 | **The Brute** | Spiked armour | Nothing clever — it's the Lord's bulwark, and very hard to put down |
 
 Every chosen you slay **strips that power from the town's Lord**: kill the Herald and the Lord can no longer call the swarm onto you; kill the Gravedigger and the dead stay dead; kill the Brute and the Lord rises without its tier health bonus. Powers default ON — the chosen are strategic prep, not a gate. Thin the court first, or rush the throne at full strength: your call. Mini-bosses glow ember-amber (Lords glow blood-red) and each drops one bundle of boss loot.
@@ -156,15 +156,24 @@ All options live under **Sandbox Options → Nocturnal Reign**.
 
 | Option | Default | Range | Description |
 |---|---|---|---|
-| Enable Raise the Dead | `on` | — | Lords can resurrect nearby corpses |
-| Cooldown (days) | `1` | 1–30 | In-game days between casts per Lord |
-| Max Zombies | `20` | 1–50 | Corpses raised per cast |
-| Raised Zombie Health (%) | `50` | 1–100 | Health of resurrected zombies |
-| Radius (tiles) | `25` | 5–50 | Corpse search radius around the Lord |
+| Enable Raise the Dead | `on` | — | Summoners shriek a horde up out of the earth |
+| Cooldown (days) | `1` | 1–30 | In-game days between casts per summoner |
+| Base Horde Size | `10` | 1–50 | Zombies raised by a tier-1 summoner; a territorial Lord raises base × its town's tier (hard cap 60 per cast) |
+| Raised Zombie Health (%) | `50` | 1–100 | Health of the risen |
+| Radius (tiles) | `25` | 5–50 | Radius around the summoner in which the horde surfaces |
+
+### Territorial Lords & The Chosen
+
+| Option | Default | Range | Description |
+|---|---|---|---|
+| Enable Territorial Lords | `on` | — | Every major town hosts its own named Lord |
+| Territorial Lord Respawn (days) | `0` | 0–365 | Days until a slain town's Lord returns (`0` = liberation is permanent) |
+| Liberation Calms the Night | `on` | — | Zombies in a liberated town stop mutating at night |
+| Enable Mini-Bosses | `on` | — | Tier 2+ towns field the Lord's chosen |
 
 ## How It Works
 
-The mod is three Lua files, ~1,000 lines, with no assets beyond the poster. The repository is laid out in Build 42's versioned Workshop format, so the repo root doubles as a Steam Workshop staging folder:
+The mod is five Lua files with no assets beyond the poster. The repository is laid out in Build 42's versioned Workshop format, so the repo root doubles as a Steam Workshop staging folder:
 
 ```
 workshop.txt                                # Steam Workshop metadata
@@ -175,29 +184,32 @@ Contents/mods/NocturnalReign/
     ├── mod.info
     ├── poster.png
     └── media/
-        ├── sandbox-options.txt                     # Sandbox schema (23 options)
+        ├── sandbox-options.txt                     # Sandbox schema (27 options)
         └── lua/
             ├── shared/
             │   ├── NocturnalReign_SandboxOptions.lua   # Config layer + day/night logic
+            │   ├── NocturnalReign_Zones.lua            # Town territories (name, box, tier)
+            │   ├── NocturnalReign_Mutation.lua         # Photophobia/night stat rules (run on every machine)
             │   └── Translate/EN/Sandbox_EN.txt         # Option labels & tooltips
             ├── server/
-            │   └── NocturnalReign_Server.lua           # Authoritative simulation (all gameplay)
+            │   └── NocturnalReign_Server.lua           # Authoritative simulation (bosses, campaign, pathing)
             └── client/
-                └── NocturnalReign_Client.lua           # Cosmetic layer (glow, warnings, banners)
+                └── NocturnalReign_Client.lua           # Glow/warnings/banners + the MP client legs
 ```
 
 Design decisions worth knowing about:
 
-- **Server-authoritative.** All gameplay logic runs in `media/lua/server/` (which also runs on the embedded server in single-player). The client file is purely cosmetic — worst case a wrong check shows a missing banner, never a broken simulation.
-- **Performance-first scheduling.** The mod never hooks `OnZombieUpdate` (which fires per zombie *per tick*). The population sweep runs once per in-game minute; the rare Lords tick on a ~1-second cadence. A city full of zombies costs almost nothing.
+- **Authority follows the engine's ownership model.** Campaign state, boss AI, pathing orders, and damage are server-authoritative. But PZ multiplayer hands each zombie's moment-to-moment simulation to the *client nearest to it* — so the day/night stat rules live in a shared module as deterministic functions of the world clock and climate, and every machine (server and each client) applies them to the zombies it simulates. No per-zombie state crosses the network, and all machines agree by construction.
+- **Explicit sync for everything else.** Object ModData is never synchronized in multiplayer, so the server pushes a once-per-second `state` command: live boss roster (matched client-side by onlineID), fog state, and liberated zones. Players who join mid-fight get the fog and the glow within a second.
+- **Performance-first scheduling.** The mod never hooks `OnZombieUpdate` (which fires per zombie *per tick*). The population sweeps run once per in-game minute; the rare bosses tick on a ~1-second cadence. A city full of zombies costs almost nothing.
 - **The Lord commands through the engine, not around it.** Pack gathering and player broadcasts use `addSound()` — the same mechanism as gunshots and car alarms — so commanded zombies path with the engine's own behaviour tree instead of fighting it, and the design can't desync from how zombie movement works on a given build.
-- **Raised zombies come from real corpses.** Raise the Dead consumes actual `IsoDeadBody` objects lying nearby — naturally self-limiting, and it reads on screen exactly like what it is.
-- **API probing over hard-coding.** Build 42 is still reworking parts of the zombie API. Where per-zombie setters were in flux, the mod probes a short list of plausible method names and uses whichever exists on your build (`trySetters` in the server file), so a renamed method degrades gracefully instead of erroring.
+- **The risen come up out of the ground.** Raise the Dead spawns its horde through the engine's MP-safe helper, born in the engine's own fake-dead state — sprawled among the corpses until the summoner's shriek (or your footsteps) stirs them to their feet.
+- **API probing over hard-coding.** Build 42 is still reworking parts of the zombie API. Gait changes prefer the official 42.18+ methods (`doSprinter()` and friends) and fall back to probing legacy setter names (`trySetters`), so a renamed method degrades gracefully instead of erroring.
 
 ## FAQ
 
 **Does it work in multiplayer?**
-The architecture is built for it (server-authoritative simulation, ModData sync, `getOnlinePlayers()` support), but it has primarily been tested in single-player on 42.19. Reports from dedicated servers are very welcome — [open an issue](../../issues).
+Yes — the mod is architected for Build 42's unstable multiplayer (42.13+): deterministic day/night rules run on every machine so client-simulated zombies behave correctly, and boss identity/fog/liberation state is broadcast to clients every second. Tested in co-op hosting and against a dedicated server on 42.19. Note that B42 MP itself is still stress-test quality (The Indie Stone's words), and its known zombie desync issues are engine-level, not mod-level. Reports welcome — [open an issue](../../issues).
 
 **Can I add it to an existing save?**
 Yes. Zombies are initialized (and roll their Lord chance) the first time the mod sees them.

@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] - 2026-07-11
 
 ### Added
 
@@ -26,6 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Repository renamed from `pz-zombie-lord` to `pz-nocturnal-reign` to match the mod; all documentation and `mod.info` links updated.
+- **Multiplayer architecture pass** (Build 42 unstable MP, 42.13+). Research against PZwiki and the developers' networking blogs surfaced two facts the original design missed: object ModData is *never* synchronized between server and clients, and each zombie's simulation is owned by the *client* nearest to it, not the server. Three structural changes follow:
+  - New shared module `NocturnalReign_Mutation.lua`: the photophobia/night-mutation stat rules are now deterministic functions of the world clock and climate (state every machine already shares), applied by the server sweep *and* by a new once-per-minute client pass — so the zombies a remote player is actually fighting (the ones their own client simulates) finally slow in the sun and sprint at night in multiplayer. Pathing orders, burn damage, and boss AI remain server-authoritative.
+  - The server now broadcasts one small `state` command per second: the live boss roster (matched client-side by zombie onlineID), current fog state, and liberated-zone names. This replaces the one-shot fog toggle and is what makes boss glow, proximity warnings, feign-death concealment, and liberation-calmed nights work on remote clients at all — and players who join mid-fight now get the Lord's fog within a second.
+  - Zombie gait changes prefer the official Build 42.18+ `IsoZombie` API (`doShambler()`, `doFastShambler()`, `doSprinter()`) with the legacy `setSpeedType` probe kept as a fallback for older 42.x builds.
+- **Raise the Dead reworked to summon a rising horde.** The old mechanic consumed real corpses and spawned replacements 1:1, which leaned on the two least-standardized APIs in PZ modding (corpse removal, manual `IsoZombie` construction — the latter unsyncable in multiplayer) and did nothing when the Lord engaged in a corpse-free field. Now the summoner calls a horde up out of the earth around it: each zombie is spawned through the MP-safe engine helper and born in the engine's fake-dead state — sprawled among the dead — then climbs to its feet as the summoner's shriek or an approaching survivor stirs it, all under the fog the Lord has already called. The mod's own population sweeps now leave any fake-dead zombie untouched (summoned, feigning, or vanilla ambusher) so nothing yanks one out of the act mid-sprawl. Sandbox option labels/tooltips updated to match.
+  - **The summoning shriek** — every cast opens with the game's blood-curdling `MetaScream` played from the summoner itself, whether or not the ground can answer. Locally audible in single-player and co-op hosting, and rendered by each remote client at the boss's position via a one-shot server command (server-played sounds never reach clients on their own).
+  - **Horde size scales with the summoner's level** — the base sandbox value (new default 10, was a flat 20) is multiplied by the summoner's level: zone tier for a territorial Lord (Rosewood 10, Louisville 40 at defaults), 1 for a wilderness Lord, and always 1 for a Gravedigger — the Lord's apprentice, never its equal. Hard-capped at 60 per cast so a maxed slider can't turn one summon into a lag event.
 
 ### Fixed
 
@@ -34,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Duplicate territorial Lords: a Lord whose chunk unloaded was replaced instantly (QA saw six Lords of Rosewood at once); a lost Lord now gets a 12-in-game-hour grace window to resurface before a replacement rises.
 - The Lord's fog now reaches multiplayer clients: the server's ClimateManager override only affects its own simulation, so players on a dedicated server fought under clear skies. The server now broadcasts the fog toggle as a server command and each client applies the identical override locally (single-player unaffected).
 - Random wilderness Lord promotions are capped at one per population sweep: when a dense horde's cell loaded, every zombie in it rolled in the same minute, and multiplayer QA saw eleven Lords rise in a single frame from one packed basement horde.
+- Raise the Dead's manual `IsoZombie.new` fallback is disabled on dedicated servers: a hand-rolled zombie is never registered with the server's net-sync, so it would have been invisible and unhittable for every client. The primary `addZombiesInOutfit` path (which syncs internally) is unaffected.
 
 ## [1.0.0] - 2026-07-09
 
@@ -57,4 +65,5 @@ First public release, developed and tested against Project Zomboid Build 42.19.
 - **23 sandbox options** covering every timing, damage, chance, and radius value, with English labels and tooltips.
 - Client-side flavour: day/night transition banners and a proximity warning when a Lord is commanding the dead nearby.
 
+[1.1.0]: https://github.com/CosmicQ/pz-nocturnal-reign/releases/tag/v1.1.0
 [1.0.0]: https://github.com/CosmicQ/pz-nocturnal-reign/releases/tag/v1.0.0

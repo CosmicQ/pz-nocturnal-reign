@@ -35,6 +35,7 @@
 
 require "NocturnalReign_SandboxOptions"
 require "NocturnalReign_Zones"
+require "NocturnalReign_Mutation"
 
 NocturnalReign = NocturnalReign or {}
 NocturnalReign.Server = NocturnalReign.Server or {}
@@ -42,6 +43,7 @@ local Server = NocturnalReign.Server
 local Options = NocturnalReign.Options
 local Keys = NocturnalReign.ModDataKeys
 local Zones = NocturnalReign.Zones
+local Mutation = NocturnalReign.Mutation
 
 -- Weak-keyed so an entry is dropped automatically once its zombie is no
 -- longer referenced elsewhere (removed/reaped/despawned), instead of us
@@ -58,34 +60,9 @@ Server.zoneLords = setmetatable({}, { __mode = "v" })
 -- diagnostics beacon prints it verbatim.
 Server.zoneMinis = setmetatable({}, { __mode = "v" })
 
-----------------------------------------------------------------------------
--- Small utility: try a list of candidate setter names on `obj` until one of
--- them exists and doesn't error. Returns the name that worked, or nil.
--- See "B42 API NOTE" above for why this exists.
-----------------------------------------------------------------------------
-local function trySetters(obj, methodNames, ...)
-    for i = 1, #methodNames do
-        local fn = obj[methodNames[i]]
-        if type(fn) == "function" then
-            local ok = pcall(fn, obj, ...)
-            if ok then return methodNames[i] end
-        end
-    end
-    return nil
-end
-
---- Same idea as trySetters, but for getters: tries each candidate method
---- name and returns the first non-nil result instead of just a success flag.
-local function tryGetters(obj, methodNames, ...)
-    for i = 1, #methodNames do
-        local fn = obj[methodNames[i]]
-        if type(fn) == "function" then
-            local ok, result = pcall(fn, obj, ...)
-            if ok and result ~= nil then return result end
-        end
-    end
-    return nil
-end
+-- trySetters/tryGetters live in the shared mutation module now (the client's
+-- MP gait pass needs them too); see "B42 API NOTE" above for why they exist.
+local trySetters = Mutation.trySetters
 
 local function isZombieLord(zombie)
     return zombie:getModData()[Keys.IS_LORD] == true
@@ -200,43 +177,18 @@ end
 
 ----------------------------------------------------------------------------
 -- MODULE 1: Photophobia (daytime)
+--
+-- The stat half (gait/senses flags) lives in NocturnalReign_Mutation.lua,
+-- shared with the client: in multiplayer each zombie is simulated by the
+-- client nearest to it, so the same deterministic rules must run on every
+-- machine or remote players' zombies never feel the sun. This file keeps
+-- the parts only the authoritative side may do: pathing orders (shade
+-- seeking, shelter holding) and health damage.
 ----------------------------------------------------------------------------
 
---- A zombie is "in direct sunlight" if its current square has no roof
---- overhead (isOutside) AND the world's ambient daylight is actually bright
---- (getDayLightStrength ~1 at noon, ~0 at night/heavy overcast dusk) - this
---- keeps zombies safe under deep dusk/dawn gloom even while technically
---- outdoors and inside the configured day window.
-local function isZombieInDirectSunlight(zombie)
-    local square = zombie:getCurrentSquare()
-    if not square or not square:isOutside() then return false end
-
-    local climate = getClimateManager()
-    local daylight = climate and climate:getDayLightStrength() or 1.0
-    return daylight > 0.35
-end
-
-local function applyPhotophobia(zombie)
-    local md = zombie:getModData()
-    if md[Keys.IS_SUNSICK] then return end
-    md[Keys.IS_SUNSICK] = true
-
-    -- Force the slowest possible gait while exposed. `0` is the shambler
-    -- index in every speed-enum revision we've seen.
-    trySetters(zombie, { "setSpeedType", "setZombieSpeedType" }, 0)
-    zombie:setRunning(false)
-    if zombie.setSprinting then zombie:setSprinting(false) end
-end
-
-local function revertPhotophobia(zombie)
-    local md = zombie:getModData()
-    if not md[Keys.IS_SUNSICK] then return end
-    md[Keys.IS_SUNSICK] = nil
-    -- Restore the normal daytime gait so a zombie that reached shelter
-    -- behaves normally again. (If it's actually nighttime, Module 2's pass
-    -- immediately after this one upgrades it to a sprinter anyway.)
-    trySetters(zombie, { "setSpeedType", "setZombieSpeedType" }, 2)
-end
+local isZombieInDirectSunlight = Mutation.isZombieInDirectSunlight
+local applyPhotophobia = Mutation.applySunSlow
+local revertPhotophobia = Mutation.revertSunSlow
 
 -- How far (in tiles) a sunlit zombie will look for a covered square to
 -- retreat to. Ring-perimeter search, so worst case is ~8*r squares per ring
@@ -342,41 +294,12 @@ local function tickBurnDamage(zombie)
 end
 
 ----------------------------------------------------------------------------
--- MODULE 2: Nightfall mutation
+-- MODULE 2: Nightfall mutation - stats shared with the client for the same
+-- multiplayer ownership reason as Module 1 (see NocturnalReign_Mutation.lua).
 ----------------------------------------------------------------------------
 
-local function applyNightMutation(zombie)
-    local md = zombie:getModData()
-    if md[Keys.IS_SPRINTER] then return end
-    md[Keys.IS_SPRINTER] = true
-
-    -- `3` is the sprinter index in every speed-enum revision we've seen;
-    -- adjust if your build differs. We also probe for a direct multiplier
-    -- setter so the SprinterSpeedMultiplier sandbox option does something
-    -- concrete on builds that expose one; it's a harmless no-op otherwise.
-    trySetters(zombie, { "setSpeedType", "setZombieSpeedType" }, 3)
-    trySetters(zombie, { "setSpeedMultiplier" }, Options.getSprinterSpeedMultiplier())
-    zombie:setRunning(true)
-    if zombie.setSprinting then zombie:setSprinting(true) end
-
-    -- Maximise senses. Every name probed maps to "as sharp as the engine
-    -- allows" rather than a tunable magnitude, since B42 does not yet expose
-    -- granular per-zombie sensory floats in a stable, documented way.
-    trySetters(zombie, { "setSight", "setVisionStrength" }, 1.0)
-    trySetters(zombie, { "setHearing", "setHearingStrength" }, 1.0)
-    trySetters(zombie, { "setMemory", "setTrackingMemory" }, 100)
-end
-
-local function revertNightMutation(zombie)
-    local md = zombie:getModData()
-    if not md[Keys.IS_SPRINTER] then return end
-    md[Keys.IS_SPRINTER] = nil
-
-    trySetters(zombie, { "setSpeedType", "setZombieSpeedType" }, 2) -- back to a "normal" fast-shambler baseline
-    trySetters(zombie, { "setSight", "setVisionStrength" }, 0.5)
-    trySetters(zombie, { "setHearing", "setHearingStrength" }, 0.5)
-    trySetters(zombie, { "setMemory", "setTrackingMemory" }, 50)
-end
+local applyNightMutation = Mutation.applyNight
+local revertNightMutation = Mutation.revertNight
 
 ----------------------------------------------------------------------------
 -- MODULE 3: The Zombie Lord
@@ -532,7 +455,7 @@ end
 local cognitionSupported = nil
 
 local function applyLordBearing(zombie)
-    trySetters(zombie, { "setSpeedType", "setZombieSpeedType" }, 0)
+    Mutation.setGait(zombie, "shamble")
     zombie:setRunning(false)
 
     if cognitionSupported == false then return end
@@ -659,52 +582,25 @@ end
 ----------------------------------------------------------------------------
 -- MODULE 3b: Raise the Dead - once-per-day Zombie Lord ability.
 --
--- Rather than conjuring zombies out of thin air, this walks the grid
--- squares around the Lord looking for corpses (IsoDeadBody objects - what a
--- zombie becomes once it's fully killed), removes each one, and spawns a
--- fresh zombie in its place at reduced health. Functionally and visually
--- that reads exactly as "the Lord raised the dead", and it's naturally
--- self-limiting: a Lord can only raise as many zombies as there are bodies
--- actually lying around nearby, up to HordeSummonMaxZombies.
+-- The Lord's signature summon: a small horde claws its way out of the
+-- ground around it. Each zombie is spawned by the engine's own MP-safe
+-- helper (addZombiesInOutfit, via spawnZombieAt below - it registers the
+-- spawn with net-sync internally) and immediately put into the engine's
+-- fake-dead state: the same FakeDeadZombieState that drives the
+-- mini-bosses' feign death, in which the engine owns the sprawled-corpse
+-- pose, the stillness, and the rise. The horde therefore surfaces lying
+-- among the dead and gets UP out of the ground instead of popping into
+-- existence - and since the Lord only casts this while engaged with a
+-- player (see lordUpdate), its fog is already rolling in to hide whatever
+-- little of the spawn-in moment remains visible.
 --
--- CONFIDENCE NOTE: dynamically instantiating a brand-new IsoZombie from Lua
--- is the single least-standardized part of PZ modding - the exact call
--- sequence has differed across builds and isn't fully pinned down for B42
--- unstable. spawnZombieAt() below uses the sequence most consistently
--- reported to work, with every optional/cosmetic step wrapped in pcall so a
--- failure there can't stop the zombie from existing. If corpses vanish but
--- no zombie appears in their place, check the server console for the
--- "[NocturnalReign] spawnZombieAt failed" message this prints, and compare
--- against IsoZombie's exposed methods on your exact build.
+-- (An earlier version consumed real IsoDeadBody corpses and spawned
+-- replacements 1:1. That leaned on the two least-standardized APIs in PZ
+-- modding - corpse removal and manual IsoZombie construction, the latter
+-- unsyncable in multiplayer - and starved whenever the Lord engaged in a
+-- corpse-free field. The fake-dead rising reads the same on screen and
+-- works everywhere.)
 ----------------------------------------------------------------------------
-
---- Scans the square grid centred on (lx, ly, lz) out to `radius` tiles and
---- returns up to `maxCount` {body = IsoDeadBody, square = IsoGridSquare}
---- pairs. Only called from a cooldown-gated cast, never per tick, so the
---- O(radius^2) square scan is an acceptable one-off cost.
-local function findNearbyCorpses(cell, lx, ly, lz, radius, maxCount)
-    -- Corpse enumeration pattern verified against the vanilla 42.19 debug
-    -- horde UI (ISSpawnHordeUI.lua): corpses live in a square's static
-    -- moving objects list as IsoDeadBody instances - there is no dedicated
-    -- getDeadBodys() accessor on this build.
-    local found = {}
-    for x = lx - radius, lx + radius do
-        for y = ly - radius, ly + radius do
-            local square = cell:getGridSquare(x, y, lz)
-            if square then
-                local objects = square:getStaticMovingObjects()
-                for i = 0, objects:size() - 1 do
-                    local obj = objects:get(i)
-                    if instanceof(obj, "IsoDeadBody") then
-                        table.insert(found, { body = obj, square = square })
-                        if #found >= maxCount then return found end
-                    end
-                end
-            end
-        end
-    end
-    return found
-end
 
 --- Attempts to spawn one live IsoZombie on `square` at `healthFrac` health
 --- (nil = leave the engine-rolled health untouched, e.g. for a fresh
@@ -730,7 +626,16 @@ local function spawnZombieAt(cell, square, healthFrac, outfit, femaleChance)
     end
 
     -- Fallback: manual construction. Kept only as a safety net for builds
-    -- where the helper above is missing/renamed.
+    -- where the helper above is missing/renamed - and only outside
+    -- multiplayer: a hand-rolled IsoZombie is never registered with the
+    -- server's zombie net-sync, so on a dedicated server it would exist
+    -- for the simulation but be invisible and unhittable for every client
+    -- (the wiki's sanctioned server-side spawn paths are addZombiesInOutfit
+    -- or VirtualZombieManager, both of which handle sync internally).
+    if isServer() then
+        print("[NocturnalReign] spawnZombieAt: no MP-safe spawn helper available on this build; skipping spawn.")
+        return nil
+    end
     local ok, zombieOrErr = pcall(function()
         local zombie = IsoZombie.new(cell)
         local fx, fy = x + 0.5, y + 0.5
@@ -752,42 +657,101 @@ local function spawnZombieAt(cell, square, healthFrac, outfit, femaleChance)
     return zombieOrErr
 end
 
+--- The summoner's "level" scales its horde: a territorial Lord raises
+--- (base horde size x zone tier), so the Lord of Louisville answers with
+--- four times the dead the Lord of Rosewood can call. A wilderness Lord
+--- counts as tier 1, and a Gravedigger - the Lord's apprentice, never its
+--- equal - always summons at level 1 no matter how mighty its town.
+local function summonerLevel(bossZombie)
+    local md = bossZombie:getModData()
+    if md[Keys.MINI_TYPE] then return 1 end
+    local zoneName = md[Keys.LORD_ZONE]
+    local zone = zoneName and Zones.byName(zoneName)
+    return zone and zone.tier or 1
+end
+
+-- Hard ceiling on one cast, whatever base x level works out to: beyond
+-- this the spawn wave itself becomes the lag event, especially in MP.
+local HORDE_SUMMON_HARD_CAP = 60
+
+--- The summoning shriek: MetaScream is the game's own blood-curdling
+--- scream (defined in 42.19's sounds_meta.txt with a 1000-tile range -
+--- it's the "someone screaming in the distance" meta event), and coming
+--- out of a zombie it reads as a shriek. Playback is split by topology:
+---   - A machine with a local listener (single-player, in-process co-op
+---     host) plays it straight off the boss so it's positional; a
+---     dedicated server has nobody to hear it (getPlayer() is nil) and
+---     skips.
+---   - Remote clients render it themselves from the one-shot "shriek"
+---     command (see NocturnalReign_Client.lua) - like everything else,
+---     sounds the server plays do not reach clients on their own.
+local function bossShriek(bossZombie)
+    local hasLocalListener = false
+    pcall(function() hasLocalListener = getPlayer() ~= nil end)
+    if hasLocalListener then
+        if not pcall(function() bossZombie:playSound("MetaScream") end) then
+            pcall(function() bossZombie:getEmitter():playSound("MetaScream") end)
+        end
+    end
+    if not isClient() then
+        pcall(function()
+            sendServerCommand("NocturnalReign", "shriek", {
+                x = bossZombie:getX(), y = bossZombie:getY(), z = bossZombie:getZ(),
+            })
+        end)
+    end
+end
+
 local function summonHorde(lordZombie)
     local cell = lordZombie:getCell()
     if not cell then return end
 
     local lx, ly, lz = lordZombie:getX(), lordZombie:getY(), lordZombie:getZ()
     local radius = Options.getHordeSummonRadius()
-    local maxCount = Options.getHordeSummonMaxZombies()
+    local level = summonerLevel(lordZombie)
+    local count = math.min(Options.getHordeSummonMaxZombies() * level, HORDE_SUMMON_HARD_CAP)
     local healthFrac = Options.getHordeSummonHealthPercent() / 100
 
-    local corpses = findNearbyCorpses(cell, lx, ly, lz, radius, maxCount)
-    if #corpses == 0 then return end
+    -- The shriek IS the cast: it announces the summon whether or not the
+    -- ground can answer (a Lord cornered on a crowded staircase may raise
+    -- nothing, but the cooldown is spent and the dread lands either way).
+    bossShriek(lordZombie)
 
+    -- Scattered, not stacked: random free squares inside the radius, at
+    -- least a couple of tiles off the Lord itself so the pack surfaces
+    -- AROUND it. Placement attempts are bounded so a Lord cornered in a
+    -- doorway can't spin forever hunting for floor space - it raises
+    -- whatever fits and moves on.
     local raised = 0
-    for i = 1, #corpses do
-        local entry = corpses[i]
-        -- removeCorpse() is the dedicated IsoDeadBody removal API (second
-        -- arg: don't drop its inventory on the ground - it's being raised,
-        -- not looted). RemoveTileObject is a legacy fallback only.
-        local removedOk = pcall(function() entry.square:removeCorpse(entry.body, false) end)
-        if not removedOk then
-            pcall(function() entry.square:RemoveTileObject(entry.body) end)
-        end
-
-        local zombie = spawnZombieAt(cell, entry.square, healthFrac)
-        if zombie then
-            local zmd = zombie:getModData()
-            zmd[Keys.COMMANDED_BY_LORD] = true
-            zmd[Keys.INITIALIZED] = true -- a resurrected zombie should never itself re-roll into a new Lord
-            raised = raised + 1
+    for _ = 1, count * 4 do
+        if raised >= count then break end
+        local dx = ZombRand(radius * 2 + 1) - radius
+        local dy = ZombRand(radius * 2 + 1) - radius
+        if dx * dx + dy * dy >= 4 then
+            local square = cell:getGridSquare(lx + dx, ly + dy, lz)
+            if square and square:isFree(false) then
+                local zombie = spawnZombieAt(cell, square, healthFrac)
+                if zombie then
+                    -- Born playing dead: FakeDeadZombieState owns the
+                    -- sprawl and the rise (see module doc comment). The
+                    -- rally sound below - and any survivor who comes close
+                    -- - is what stirs the risen to their feet.
+                    pcall(function() zombie:setFakeDead(true) end)
+                    local zmd = zombie:getModData()
+                    zmd[Keys.COMMANDED_BY_LORD] = true
+                    zmd[Keys.INITIALIZED] = true -- a summoned zombie should never itself re-roll into a new Lord
+                    raised = raised + 1
+                end
+            end
         end
     end
 
     if raised > 0 then
-        print(string.format("[NocturnalReign] Zombie Lord raised %d zombie(s) from the dead.", raised))
-        -- The raising itself is loud enough to draw the new arrivals (and
-        -- anything else nearby) toward the Lord, same mechanism as (b)/(c)
+        print(string.format(
+            "[NocturnalReign] A level-%d summoner shrieks: %d zombie(s) rise from the earth.",
+            level, raised))
+        -- The raising itself is loud enough to stir the risen and draw
+        -- anything else nearby toward the Lord, same mechanism as (b)/(c)
         -- in lordUpdate() below.
         addSound(lordZombie, lx, ly, lz, radius, 100)
     end
@@ -937,8 +901,10 @@ local function lordUpdate(lordZombie)
 
         -- Raise the Dead: cast at most once per HordeSummonCooldownDays,
         -- triggered by the same "spotted a player" moment as the alert
-        -- broadcast above - thematically the Lord raises corpses when it
-        -- actually engages, not on an idle timer. World age (total elapsed
+        -- broadcast above - thematically the Lord calls its horde up out
+        -- of the earth when it actually engages, not on an idle timer
+        -- (which also means its fog is already rolling in to cover the
+        -- summon). World age (total elapsed
         -- in-game hours) is monotonic, unlike getDay() which is merely the
         -- day-of-month and wraps at month boundaries; it also survives
         -- server restarts/save reloads without extra bookkeeping.
@@ -1057,15 +1023,10 @@ local function setFogOverride(enabled)
     -- On a dedicated server the override above only touches the SERVER's
     -- climate simulation; clients run their own ClimateManager and never
     -- see it (MP QA: the "calls the fog" receipt printed while the player
-    -- fought under clear skies). Mirror every toggle to the clients, where
-    -- NocturnalReign_Client applies the identical override locally.
-    -- isServer() is false in single-player, where the local set above is
-    -- already the whole job.
-    if isServer() then
-        pcall(function()
-            sendServerCommand("NocturnalReign", "fog", { on = enabled and true or false })
-        end)
-    end
+    -- fought under clear skies). The fog flag rides to the clients in the
+    -- once-per-second state broadcast below (broadcastState), which also
+    -- covers players who join mid-fog - a one-shot toggle command missed
+    -- them entirely.
 end
 
 local function updateLordFog(anyLordInCombat)
@@ -1092,6 +1053,69 @@ local function updateLordFog(anyLordInCombat)
             print("[NocturnalReign] The Lord's fog lifts.")
         end
     end
+end
+
+----------------------------------------------------------------------------
+-- MODULE 3e: State broadcast - the multiplayer mirror.
+--
+-- Object ModData is NOT synchronized between server and clients (PZwiki,
+-- "Mod data" - confirmed in MP QA: remote clients never printed the glow
+-- diagnostics because their copies of the Lord carry no NR_IsZombieLord
+-- flag). Everything the client-side flavour layer needs to know is
+-- therefore pushed explicitly, once per lord-tick (~1s), as one small
+-- server command:
+--
+--   fog    - whether the Lord's fog override is currently active. Sending
+--            it continuously (rather than only on toggle) means a player
+--            who joins mid-fight gets the fog within a second.
+--   bosses - the live boss roster as { id = onlineID, mini = type|nil,
+--            fake = playing-dead } entries. onlineIDs are session-scoped
+--            (never persisted), which is exactly right for a once-per-
+--            second refresh; the client matches them against its own
+--            loaded zombies' getOnlineID().
+--   calm   - names of currently-liberated zones whose night is calmed, so
+--            each client's own gait pass (NocturnalReign_Client.lua) can
+--            skip the sprinter mutation inside them.
+--
+-- Sent whenever this machine is authoritative and not a pure client: on a
+-- dedicated server isServer() is true; a co-op host may report neither
+-- isServer() nor isClient(), so the guard is "not isClient()" and the send
+-- itself is pcall-wrapped (in true single-player it is a harmless no-op).
+----------------------------------------------------------------------------
+
+local function broadcastState()
+    if isClient() then return end
+
+    local bosses = {}
+    for lordZombie in pairs(Server.lords) do
+        pcall(function()
+            if not lordZombie:isDead() then
+                local id = lordZombie:getOnlineID()
+                if id and id ~= -1 then
+                    local fake = false
+                    pcall(function() fake = lordZombie:isFakeDead() end)
+                    table.insert(bosses, {
+                        id = id,
+                        mini = lordZombie:getModData()[Keys.MINI_TYPE],
+                        fake = fake,
+                    })
+                end
+            end
+        end)
+    end
+
+    local calm = {}
+    if Options.isZoneLordsEnabled() and Options.isLiberationCalmsNightEnabled() then
+        for _, zone in ipairs(Zones.all()) do
+            if isZoneLiberated(zone.name) then
+                table.insert(calm, zone.name)
+            end
+        end
+    end
+
+    pcall(function()
+        sendServerCommand("NocturnalReign", "state", { fog = fogActive, bosses = bosses, calm = calm })
+    end)
 end
 
 -- Lords are rare by design (a fraction of a percent of the population), so
@@ -1121,6 +1145,7 @@ Events.OnTick.Add(function()
     end
 
     updateLordFog(anyLordInCombat)
+    broadcastState()
 end)
 
 ----------------------------------------------------------------------------
@@ -1464,27 +1489,34 @@ local function mainSweep()
 
     resetRandomLordBudget()
 
-    local hour = getGameTime():getHour()
-    local daytime = Options.isDaytimeHour(hour)
     local photophobiaOn = Options.isPhotophobiaEnabled()
     local nightMutationOn = Options.isNightMutationEnabled()
 
     -- Heavy fog shields zombies from the sun: under it the horde behaves as
-    -- if it were night (sprinters, no shelter-seeking). Reading the actual
-    -- climate value (vanilla-verified getFogIntensity, same threshold family
-    -- vanilla fishing/foraging use) means both the Zombie Lord's called fog
-    -- AND naturally-occurring heavy fog grant the protection.
-    local fogShield = false
-    pcall(function() fogShield = getClimateManager():getFogIntensity() >= 0.5 end)
-    local sunThreat = daytime and not fogShield
+    -- if it were night (sprinters, no shelter-seeking). Shared helper so
+    -- this sweep and every MP client's gait pass agree; see
+    -- NocturnalReign_Mutation.lua for the climate details.
+    local sunThreat = Mutation.isSunThreatNow()
 
     for i = 0, zombieList:size() - 1 do
         local zombie = zombieList:get(i)
         if zombie and not zombie:isDead() then
-            initZombieIfNeeded(zombie)
+            -- Anything lying in the engine's fake-dead state - a summoned
+            -- horde member that hasn't risen yet, a feigning chosen, a
+            -- vanilla ambusher - must be left exactly as it lies: a gait
+            -- change, sense buff, shade-path order, or a won Lord roll
+            -- (outfit! model reset!) would yank it out of the act
+            -- mid-sprawl. Even the first-sight init roll waits until it
+            -- rises - INITIALIZED stays unset, so nothing is lost.
+            local fakeDead = false
+            pcall(function() fakeDead = zombie:isFakeDead() end)
+
+            if not fakeDead then initZombieIfNeeded(zombie) end
 
             local miniType = zombie:getModData()[Keys.MINI_TYPE]
-            if isZombieLord(zombie) or miniType then
+            if fakeDead and not (isZombieLord(zombie) or miniType) then
+                -- leave it lying; it joins the normal branches once it rises
+            elseif isZombieLord(zombie) or miniType then
                 -- Bosses are immune to both daytime photophobia and the
                 -- nightfall mutation pass: they manage their own stats at
                 -- promotion, and Module 3 drives their ongoing behaviour.

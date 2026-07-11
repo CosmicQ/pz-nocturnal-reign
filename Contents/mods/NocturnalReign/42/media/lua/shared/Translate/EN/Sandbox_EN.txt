@@ -56,19 +56,19 @@ Sandbox_EN = {
     Sandbox_NocturnalReign_EnableLordDoorUse_tooltip = "Zombie Lords navigate intelligently and open unlocked doors instead of battering them, regardless of the world's zombie Cognition lore. Locked and barricaded doors still stop them. NOTE: requires a game build that exposes a per-zombie cognition API - Build 42.19 does not, so this option is dormant there.",
 
     Sandbox_NocturnalReign_EnableHordeSummon = "Enable Raise the Dead",
-    Sandbox_NocturnalReign_EnableHordeSummon_tooltip = "Allows a Zombie Lord to resurrect nearby corpses into fresh zombies once its cooldown is up.",
+    Sandbox_NocturnalReign_EnableHordeSummon_tooltip = "Allows a Zombie Lord to call a horde up out of the earth once its cooldown is up. The risen surface sprawled among the dead and climb to their feet as the fight begins.",
 
     Sandbox_NocturnalReign_HordeSummonCooldownDays = "Raise the Dead Cooldown (days)",
     Sandbox_NocturnalReign_HordeSummonCooldownDays_tooltip = "In-game days a Zombie Lord must wait between uses of Raise the Dead.",
 
-    Sandbox_NocturnalReign_HordeSummonMaxZombies = "Raise the Dead Max Zombies",
-    Sandbox_NocturnalReign_HordeSummonMaxZombies_tooltip = "Maximum number of corpses a single use of Raise the Dead will resurrect.",
+    Sandbox_NocturnalReign_HordeSummonMaxZombies = "Raise the Dead Base Horde Size",
+    Sandbox_NocturnalReign_HordeSummonMaxZombies_tooltip = "Zombies called up from the earth by a tier-1 summoner. Scales with the summoner: a territorial Lord raises this number times its town's tier (the Lord of Louisville raises 4x), while a Gravedigger always raises the base amount. Hard-capped at 60 per cast.",
 
     Sandbox_NocturnalReign_HordeSummonHealthPercent = "Raised Zombie Health (%)",
-    Sandbox_NocturnalReign_HordeSummonHealthPercent_tooltip = "Health percentage of zombies resurrected by Raise the Dead.",
+    Sandbox_NocturnalReign_HordeSummonHealthPercent_tooltip = "Health percentage of zombies raised by Raise the Dead.",
 
     Sandbox_NocturnalReign_HordeSummonRadius = "Raise the Dead Radius (tiles)",
-    Sandbox_NocturnalReign_HordeSummonRadius_tooltip = "Radius around a Zombie Lord searched for corpses to resurrect.",
+    Sandbox_NocturnalReign_HordeSummonRadius_tooltip = "Radius around the Zombie Lord in which the raised horde surfaces.",
 
     Sandbox_NocturnalReign_EnableZoneLords = "Enable Territorial Lords",
     Sandbox_NocturnalReign_EnableZoneLords_tooltip = "Each major town is the domain of its own Zombie Lord, which rises when a survivor enters and grows stronger with the town's difficulty tier. Slaying it liberates the town. Random roaming Lords still appear in the wilderness between towns.",

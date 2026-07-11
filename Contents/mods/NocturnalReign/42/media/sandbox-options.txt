@@ -61,7 +61,7 @@ option NocturnalReign.HordeSummonCooldownDays
 {type = integer, min = 1, max = 30, default = 1, page = NocturnalReign, translation = NocturnalReign_HordeSummonCooldownDays,}
 
 option NocturnalReign.HordeSummonMaxZombies
-{type = integer, min = 1, max = 50, default = 20, page = NocturnalReign, translation = NocturnalReign_HordeSummonMaxZombies,}
+{type = integer, min = 1, max = 50, default = 10, page = NocturnalReign, translation = NocturnalReign_HordeSummonMaxZombies,}
 
 option NocturnalReign.HordeSummonHealthPercent
 {type = integer, min = 1, max = 100, default = 50, page = NocturnalReign, translation = NocturnalReign_HordeSummonHealthPercent,}

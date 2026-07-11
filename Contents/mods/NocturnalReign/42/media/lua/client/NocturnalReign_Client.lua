@@ -1,25 +1,51 @@
 --[[
     NocturnalReign_Client.lua
 
-    Client-side flavour layer for Nocturnal Reign. Files under
-    media/lua/client/ only ever run on the client (including the local
-    client of a single-player game), so this file never touches the
-    authoritative simulation - it only *reads* state the server already
-    wrote (via ModData, which the engine syncs on IsoGameCharacter/IsoObject
-    automatically) and turns it into on-screen feedback.
+    Client-side layer for Nocturnal Reign. Files under media/lua/client/
+    only ever run on the client (including the local client of a
+    single-player game).
 
-    Nothing here mutates gameplay state: worst case if this file's checks
-    are ever wrong, the player sees a missing/incorrect warning banner, not
-    a broken simulation.
+    TWO JOBS, TWO MULTIPLAYER REALITIES:
+
+    1. Flavour (glow, banners, warnings). Object ModData is NOT synchronized
+       between server and clients (PZwiki "Mod data"; MP QA confirmed - the
+       glow diagnostics never printed on a remote client because its copy of
+       the Lord carries no NR_IsZombieLord flag). Boss identity therefore
+       arrives from the server's once-per-second "state" broadcast, matched
+       to local zombies by onlineID; the direct ModData read remains as the
+       single-player / co-op-host path, where server and client share one
+       Lua state.
+
+    2. Gait (the one genuinely gameplay-touching pass in this file). PZ
+       multiplayer gives authority over each zombie's simulation to the
+       CLIENT nearest to it ("Zed Clients" / "OwnerZhip" dev blogs), so the
+       server's photophobia/night-mutation stat changes never reach the
+       zombies remote players are actually fighting. The pass at the bottom
+       of this file runs the same deterministic rules (shared module
+       NocturnalReign_Mutation.lua, keyed to the world clock and climate
+       every machine already agrees on) over this client's loaded zombies.
+       It runs ONLY on multiplayer clients - in single-player and on the
+       hosting process the server module's sweep already does this work.
 ]]
 
 require "NocturnalReign_SandboxOptions"
+require "NocturnalReign_Zones"
+require "NocturnalReign_Mutation"
 
 NocturnalReign = NocturnalReign or {}
 NocturnalReign.Client = NocturnalReign.Client or {}
 local Client = NocturnalReign.Client
 local Options = NocturnalReign.Options
 local Keys = NocturnalReign.ModDataKeys
+local Zones = NocturnalReign.Zones
+local Mutation = NocturnalReign.Mutation
+
+-- Mirror of the server's once-per-second "state" broadcast (multiplayer
+-- only; stays empty in single-player, where the ModData fast paths below
+-- serve instead). See onServerCommand for the payload shape.
+local remoteBosses = {}  -- [onlineID] = { id, mini = type|nil, fake = bool }
+local remoteCalm = {}    -- [zoneName] = true
+local remoteFog = nil    -- nil until the first state packet arrives
 
 local lastPeriod = nil
 local scanCounter = 0
@@ -177,9 +203,25 @@ local function scanForLords(player)
         for i = 0, list:size() - 1 do
             local zombie = list:get(i)
             if zombie and not zombie:isDead() then
+                -- ModData is the single-player/co-op-host fast path; it is
+                -- never synced over the network (see file header), so on a
+                -- remote client boss identity comes from the server's state
+                -- broadcast instead, matched by onlineID.
                 local md = zombie:getModData()
                 local isLord = md[Keys.IS_LORD] == true
                 local isMini = md[Keys.MINI_TYPE] ~= nil
+                if not isLord and not isMini then
+                    local id = nil
+                    pcall(function() id = zombie:getOnlineID() end)
+                    local entry = id and remoteBosses[id]
+                    -- entry.fake: the server says this chosen is playing
+                    -- dead - leave it unmarked even if the local
+                    -- isFakeDead() below can't tell.
+                    if entry and not entry.fake then
+                        isMini = entry.mini ~= nil
+                        isLord = not isMini
+                    end
+                end
                 -- A chosen playing dead must LOOK dead: no glow, no
                 -- highlight, until the ambush springs. The cleanup pass
                 -- below removes its light because it isn't in `seen`.
@@ -220,28 +262,31 @@ local function scanForLords(player)
 end
 
 ----------------------------------------------------------------------------
--- Lord fog, multiplayer leg.
+-- Server state mirror, multiplayer leg.
 --
--- On a dedicated server the ClimateManager fog override the server sets
--- only affects the server's own simulation - each client runs its own
--- ClimateManager and must apply the identical override locally. The server
--- broadcasts a "fog" command whenever its override toggles; this handler is
--- the receiving end. Single-player never fires OnServerCommand, and there
--- the server module's local set already lands on the one shared
--- ClimateManager, so this stays MP-only by construction.
+-- The server pushes one small "state" command every lord-tick (~1s); see
+-- MODULE 3e in NocturnalReign_Server.lua for the payload and the reasoning
+-- (object ModData never syncs, and one-shot toggles miss mid-fight
+-- joiners). This handler is the receiving end for all of it:
 --
--- The two constants mirror MODULE 3c in NocturnalReign_Server.lua - keep
--- them in sync by hand (the server file never loads on the client, so they
--- cannot be shared without moving them to the shared options module).
+--   fog    - applied to the local ClimateManager, because on a dedicated
+--            server the server's own override only affects the server's
+--            simulation. Single-player never fires OnServerCommand, and
+--            there the server module's local set already lands on the one
+--            shared ClimateManager, so this stays MP-only by construction.
+--   bosses - stored in remoteBosses for scanForLords (glow, warnings).
+--   calm   - stored in remoteCalm for the client gait pass below.
+--
+-- The two fog constants mirror MODULE 3c in NocturnalReign_Server.lua -
+-- keep them in sync by hand (the server file's locals are not visible
+-- here without promoting them to the shared options module).
 ----------------------------------------------------------------------------
 
 local FOG_CLIMATE_ID = 5   -- ClimateManager float id: fog intensity
 local FOG_INTENSITY = 0.85 -- 0..1; heavy but not a total whiteout
 
-local function onServerCommand(module, command, args)
-    if module ~= "NocturnalReign" or command ~= "fog" then return end
-    local on = args and args.on == true
-    local ok = pcall(function()
+local function applyFogOverride(on)
+    return pcall(function()
         local fogFloat = getClimateManager():getClimateFloat(FOG_CLIMATE_ID)
         if on then
             fogFloat:setEnableOverride(true)
@@ -250,11 +295,64 @@ local function onServerCommand(module, command, args)
             fogFloat:setEnableOverride(false)
         end
     end)
-    -- Receipt on purpose: Kahlua swallows pure-Lua pcall failures silently,
-    -- and "the fog didn't show" is otherwise indistinguishable from "the
-    -- command never arrived".
-    print(string.format("[NocturnalReign] fog %s (server command, applied=%s)",
-        on and "rolls in" or "lifts", tostring(ok)))
+end
+
+--- The summoning shriek, remote-client leg (see bossShriek in
+--- NocturnalReign_Server.lua): rendered locally at the boss's coordinates.
+--- MetaScream carries for hundreds of tiles by design - hearing it from
+--- across town and knowing what it means is the feature. The two
+--- PlayWorldSound attempts cover the overload variants B42 has shipped
+--- ((name, square, dropoff, distance, pitch, bool) and the same with a
+--- trailing repeat-radius float); the guard against non-clients keeps an
+--- in-process co-op host from double-playing over its own local playback.
+local function playShriek(args)
+    if not isClient() then return end
+    if not args or not args.x then return end
+    pcall(function()
+        local square = getCell():getGridSquare(args.x, args.y, args.z)
+        if not square then return end -- too far away to be loaded = out of earshot
+        local sm = getSoundManager()
+        if not pcall(function() sm:PlayWorldSound("MetaScream", square, 0, 200, 1.0, false) end) then
+            pcall(function() sm:PlayWorldSound("MetaScream", square, 0, 200, 1.0, 0, false) end)
+        end
+    end)
+end
+
+local function onServerCommand(module, command, args)
+    if module ~= "NocturnalReign" then return end
+    if command == "shriek" then return playShriek(args) end
+    if command ~= "state" then return end
+    args = args or {}
+
+    -- Rebuild rather than merge: the packet is the complete roster, so a
+    -- boss the server stopped mentioning (died, despawned) drops out here
+    -- automatically.
+    remoteBosses = {}
+    if type(args.bosses) == "table" then
+        for _, entry in pairs(args.bosses) do
+            if type(entry) == "table" and entry.id then
+                remoteBosses[entry.id] = entry
+            end
+        end
+    end
+
+    remoteCalm = {}
+    if type(args.calm) == "table" then
+        for _, zoneName in pairs(args.calm) do
+            remoteCalm[zoneName] = true
+        end
+    end
+
+    local fogOn = args.fog == true
+    if fogOn ~= remoteFog then
+        remoteFog = fogOn
+        local ok = applyFogOverride(fogOn)
+        -- Receipt on purpose: Kahlua swallows pure-Lua pcall failures
+        -- silently, and "the fog didn't show" is otherwise
+        -- indistinguishable from "the command never arrived".
+        print(string.format("[NocturnalReign] fog %s (server state, applied=%s)",
+            fogOn and "rolls in" or "lifts", tostring(ok)))
+    end
 end
 
 Events.OnServerCommand.Add(onServerCommand)
@@ -271,3 +369,102 @@ local function onPlayerUpdate(player)
 end
 
 Events.OnPlayerUpdate.Add(onPlayerUpdate)
+
+----------------------------------------------------------------------------
+-- Multiplayer gait pass (Modules 1 & 2, client leg).
+--
+-- Multiplayer clients own the simulation of the zombies nearest to them
+-- (see the file header), so the server's photophobia/night-mutation stats
+-- never reach exactly the zombies this player is fighting. This pass runs
+-- the same deterministic shared rules (NocturnalReign_Mutation.lua) over
+-- this client's loaded zombies, on the same once-per-in-game-minute
+-- cadence as the server sweep. Because the rules key only off the world
+-- clock and the (engine-synced) climate, every machine reaches the same
+-- verdict for the same zombie - no coordination needed, and machines
+-- double-applying to the same zombie is a harmless no-op thanks to the
+-- ModData idempotence flags.
+--
+-- Deliberately NOT here: pathing (shade-seeking/shelter-holding stays a
+-- server-side order), burn damage (health is authoritative state), and
+-- bosses (the server manages their bearing; we skip anything the state
+-- broadcast or local ModData marks as a boss).
+----------------------------------------------------------------------------
+
+local function clientGaitSweep()
+    if not isClient() then return end -- SP/host: the server module's sweep owns this
+
+    local player = getPlayer()
+    if not player then return end
+    local cell = player:getCell()
+    local list = cell and cell:getZombieList()
+    if not list then return end
+
+    local photophobiaOn = Options.isPhotophobiaEnabled()
+    local nightMutationOn = Options.isNightMutationEnabled()
+    if not photophobiaOn and not nightMutationOn then return end
+
+    local sunThreat = Mutation.isSunThreatNow()
+
+    for i = 0, list:size() - 1 do
+        local zombie = list:get(i)
+        if zombie and not zombie:isDead() then
+            local md = zombie:getModData()
+            local id = nil
+            pcall(function() id = zombie:getOnlineID() end)
+            local entry = id and remoteBosses[id]
+            local isBoss = entry ~= nil
+                or md[Keys.IS_LORD] == true or md[Keys.MINI_TYPE] ~= nil
+
+            if isBoss then
+                -- A boss's slow, deliberate bearing must also be asserted
+                -- by the machine that actually simulates it - this client,
+                -- whenever the boss is nearest this player - or the Lord
+                -- sprints like any other night zombie for remote players.
+                -- Exception: a chosen playing dead is left untouched so
+                -- nothing disturbs the act.
+                local fake = entry ~= nil and entry.fake == true
+                if not fake then
+                    pcall(function() fake = zombie:isFakeDead() end)
+                end
+                if not fake then
+                    md[Keys.IS_SUNSICK] = nil
+                    md[Keys.IS_SPRINTER] = nil
+                    Mutation.setGait(zombie, "shamble")
+                    zombie:setRunning(false)
+                end
+            else
+                -- Anything lying in the engine's fake-dead state (the
+                -- Lord's freshly-summoned horde, vanilla ambushers) is
+                -- left exactly as it lies - a gait change here would yank
+                -- it out of the act mid-sprawl. It joins this branch
+                -- normally once it rises.
+                local fakeDead = false
+                pcall(function() fakeDead = zombie:isFakeDead() end)
+                if fakeDead then
+                    -- skip
+                elseif sunThreat then
+                    if photophobiaOn and Mutation.isZombieInDirectSunlight(zombie) then
+                        Mutation.applySunSlow(zombie)
+                    elseif photophobiaOn then
+                        Mutation.revertSunSlow(zombie)
+                    end
+                    Mutation.revertNight(zombie)
+                else
+                    Mutation.revertSunSlow(zombie)
+                    local calmed = false
+                    if nightMutationOn then
+                        local zone = Zones.zoneAt(zombie:getX(), zombie:getY())
+                        calmed = zone ~= nil and remoteCalm[zone.name] == true
+                    end
+                    if nightMutationOn and not calmed then
+                        Mutation.applyNight(zombie)
+                    else
+                        Mutation.revertNight(zombie)
+                    end
+                end
+            end
+        end
+    end
+end
+
+Events.EveryOneMinute.Add(clientGaitSweep)
