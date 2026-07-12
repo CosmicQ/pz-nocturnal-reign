@@ -290,7 +290,7 @@ local FOG_INTENSITY = 0.85 -- 0..1; heavy but not a total whiteout
 -- admin value layer, 8 floats = exterior then interior RGBA.
 local FOG_TINT = {
     exR = 0.55, exG = 0.06, exB = 0.06, exA = 0.85,
-    inR = 0.30, inG = 0.08, inB = 0.08, inA = 0.35,
+    inR = 0.45, inG = 0.06, inB = 0.06, inA = 0.65,
 }
 
 local function getFogClimateColor()
@@ -305,20 +305,26 @@ local function getFogClimateColor()
     return nil
 end
 
-local function applyFogOverride(on)
-    local ok = pcall(function()
+--- Hold this client's fog intensity to the server's actual value. In B42
+--- MP each client runs its own weather simulation, desynced from the
+--- server's - when the first implementation merely *released* its
+--- override as the Lord's fog lifted, control passed back to whatever fog
+--- the local sim happened to be brewing and the fog never visibly lifted
+--- (playtest: the client logged the lift, applied=true, and stayed
+--- socked-in for 40 minutes). Mirroring continuously makes client fog ==
+--- server fog at all times: lord fog, natural fog, and every lift.
+local function mirrorFogIntensity(intensity)
+    return pcall(function()
         local fogFloat = getClimateManager():getClimateFloat(FOG_CLIMATE_ID)
-        if on then
-            fogFloat:setEnableOverride(true)
-            fogFloat:setOverride(FOG_INTENSITY, 1)
-        else
-            fogFloat:setEnableOverride(false)
-        end
+        fogFloat:setEnableOverride(true)
+        fogFloat:setOverride(intensity, 1)
     end)
-    -- Tint in its own pcall so a build without the color channel can't
-    -- take the intensity override down with it. Re-asserted alongside the
-    -- intensity on every state packet, for the same climate-sync-stomp
-    -- reason.
+end
+
+--- The blood tint rides only while the Lord's fog is active; natural
+--- weather fog stays grey. Own pcall so a build without the color channel
+--- can't take the intensity mirror down with it.
+local function setFogTint(on)
     pcall(function()
         local tint = getFogClimateColor()
         if not tint then return end
@@ -330,7 +336,6 @@ local function applyFogOverride(on)
             tint:setEnableAdmin(false)
         end
     end)
-    return ok
 end
 
 --- The summoning shriek, remote-client leg (see bossShriek in
@@ -388,29 +393,20 @@ local function onServerCommand(module, command, args)
         end
     end
 
+    -- Mirror the server's actual fog level on every packet (see
+    -- mirrorFogIntensity); the tint tracks the lord-fog flag. Receipts
+    -- only on the flag's transitions - Kahlua swallows pure-Lua pcall
+    -- failures silently, and "the fog didn't show" is otherwise
+    -- indistinguishable from "the command never arrived".
     local fogOn = args.fog == true
-    if fogOn then
-        -- Re-assert the override on EVERY packet while the fog holds, not
-        -- just on the transition: the engine's own MP climate sync stomps
-        -- client-side overrides between our packets (playtested - the
-        -- server's fog held while the client's visual faded within
-        -- seconds). Worst case the fog flickers for the sub-second gap
-        -- between a climate sync and our next state packet.
-        local ok = applyFogOverride(true)
-        if remoteFog ~= true then
-            remoteFog = true
-            -- Receipt on purpose: Kahlua swallows pure-Lua pcall failures
-            -- silently, and "the fog didn't show" is otherwise
-            -- indistinguishable from "the command never arrived".
-            print(string.format("[NocturnalReign] fog rolls in (server state, applied=%s)", tostring(ok)))
-        end
-    elseif remoteFog == nil then
-        remoteFog = false -- first packet of the session, nothing to undo
-    elseif remoteFog then
-        remoteFog = false
-        local ok = applyFogOverride(false)
-        print(string.format("[NocturnalReign] fog lifts (server state, applied=%s)", tostring(ok)))
+    local ok = mirrorFogIntensity(tonumber(args.fogN)
+        or (fogOn and FOG_INTENSITY or 0))
+    setFogTint(fogOn)
+    if fogOn ~= (remoteFog == true) and (remoteFog ~= nil or fogOn) then
+        print(string.format("[NocturnalReign] fog %s (server state, applied=%s)",
+            fogOn and "rolls in" or "lifts", tostring(ok)))
     end
+    remoteFog = fogOn
 end
 
 Events.OnServerCommand.Add(onServerCommand)

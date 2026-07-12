@@ -1056,7 +1056,11 @@ local FOG_LINGER_TICKS = 30   -- lord-ticks (~30s) fog lingers after combat ends
 -- rooms don't turn into a darkroom.
 local FOG_TINT = {
     exR = 0.55, exG = 0.06, exB = 0.06, exA = 0.85,
-    inR = 0.30, inG = 0.08, inB = 0.08, inA = 0.35,
+    -- Interior nearly as red and strong: at low alpha the indoor haze
+    -- blended back to engine-default white the moment a player stepped
+    -- through a door (playtest), snapping the dread off exactly when the
+    -- walls should be closing in.
+    inR = 0.45, inG = 0.06, inB = 0.06, inA = 0.65,
 }
 
 --- The COLOR_NEW_FOG ClimateColor, by constant when this build exposes it,
@@ -1195,8 +1199,19 @@ local function broadcastState()
         end
     end
 
+    -- The server's ACTUAL current fog intensity rides along so clients can
+    -- mirror it continuously. In B42 MP each client runs its own weather
+    -- simulation, desynced from the server's - merely releasing a client
+    -- override on lift handed control back to whatever fog the client's
+    -- local sim was brewing, and the Lord's fog "never lifted" (playtest).
+    -- With the mirror, client fog == server fog at all times: lord fog,
+    -- natural fog, and every lift, all in sync.
+    local fogNow = 0
+    pcall(function() fogNow = getClimateManager():getFogIntensity() end)
+
     pcall(function()
-        sendServerCommand("NocturnalReign", "state", { fog = fogActive, bosses = bosses, calm = calm })
+        sendServerCommand("NocturnalReign", "state",
+            { fog = fogActive, fogN = fogNow, bosses = bosses, calm = calm })
     end)
 end
 

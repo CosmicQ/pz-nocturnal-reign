@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The Lord's fog never visibly lifted for multiplayer clients: each B42 client runs its own weather simulation, so releasing the client-side override on lift handed fog control back to whatever the local sim was brewing (playtest: the client logged the lift and stayed socked-in for 40 minutes). Clients now mirror the server's actual fog intensity continuously from the once-per-second state packet — lord fog, natural weather fog, and every lift stay in sync with the server for all players.
+- Stepping indoors during the Lord's fog snapped the haze from blood red to engine-default white: the interior half of the fog tint was too weak (alpha 0.35). Interiors now hold nearly the same deep red as the streets.
 - Every server restart left every town boss-less for 12 in-game hours: the lost-boss grace window's sighting clock was persisted into the save, but restarts reap the live boss zombies it was vouching for (observed on the dedicated server — an entire session of sweeps with no Lord, hence no fog, no summon, no glow). The sighting clock is now in-memory and session-scoped, so bosses respawn as soon as a player enters town after a restart, while the within-session anti-duplicate grace still works exactly as before.
 
 ## [1.1.0] - 2026-07-11
